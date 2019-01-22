@@ -1,0 +1,20 @@
+{application, consuela, [
+    {description, "An OTP application"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {consuela_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        jsx,
+        hackney,
+        cowlib
+    ]},
+    {env, []},
+    {modules, []},
+    {maintainers, [
+        "a.mayorov@rbkmoney.com"
+    ]},
+    {licenses, ["Apache 2.0"]},
+    {links, []}
+]}.
