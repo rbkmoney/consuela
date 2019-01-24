@@ -1,0 +1,103 @@
+%% Grammar
+
+value <- sign (
+    (
+        (ms:number 'ms') /
+        ( h:number 'h')?
+        ( m:number 'm')?
+        ( s:number 's')?
+        (ms:number 'ms')?
+    )
+    (us:number 'us')?
+    (ns:number 'ns'?)?
+)
+`
+[Sign, Parts] = Node,
+Sign * erlang:round(lists:foldl(
+    fun
+        ({Unit, Num}, N) when is_atom(Unit) ->
+            N + Num * factor(Unit);
+        (_, N) ->
+            N
+    end,
+    0,
+    lists:flatten(Parts)
+))
+`;
+
+sign <- '-'?
+`
+case Node of
+    []    -> +1;
+    <<_>> -> -1
+end
+`;
+
+number <- integer ('.' fraction)?
+`
+[Int, Frac] = Node,
+case Frac of
+    [    ] -> Int;
+    [_, F] -> Int + F
+end
+`;
+
+integer <- [0-9]+
+`
+lists:foldl(
+    fun (<<D>>, N) -> N * 10 + (D - $0) end,
+    0.0,
+    Node
+)
+`;
+
+fraction <- [0-9]+
+`
+io:format("~p~n", [Node]),
+lists:foldl(
+    fun (<<D>>, N) -> (N + (D - $0)) / 10 end,
+    0.0,
+    Node
+)
+`;
+
+%% Extra
+`
+
+%%%
+%%% Consul duration parser and formatter
+
+-type t() ::
+    integer(). % ns
+
+-type unit() ::
+    ns | us | ms | s | m | h.
+
+-export_type([t/0]).
+-export_type([unit/0]).
+
+-export([format/2]).
+-export([factor/1]).
+
+-spec format(number(), unit()) ->
+    binary().
+
+format(N, Unit) ->
+    erlang:iolist_to_binary([number_to_binary(N), erlang:atom_to_binary(Unit, latin1)]).
+
+number_to_binary(N) when is_integer(N) ->
+    integer_to_binary(N);
+number_to_binary(N) when is_float(N) ->
+    float_to_binary(N).
+
+-spec factor(unit()) ->
+    t().
+
+factor('ns') -> 1;
+factor('us') -> 1000 * factor('ns');
+factor('ms') -> 1000 * factor('us');
+factor( 's') -> 1000 * factor('ms');
+factor( 'm') ->   60 * factor('s');
+factor( 'h') ->   60 * factor('m').
+
+`
