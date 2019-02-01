@@ -5,13 +5,16 @@ services:
     image: consul:latest
     networks:
       - consul
+    hostname: consul1
     command: "agent -server -retry-join consul0 -client 0.0.0.0"
 
   consul2:
     <<: *consul-server
+    hostname: consul2
 
   consul0:
     <<: *consul-server
+    hostname: consul0
     ports:
       - "8400:8400"
       - "8500:8500"
