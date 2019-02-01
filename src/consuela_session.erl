@@ -6,7 +6,7 @@
 %%
 
 -type id()       :: uuid().
--type name()     :: string().
+-type name()     :: binary().
 -type nodename() :: inet:hostname().
 -type ttl()      :: non_neg_integer().
 -type behavior() :: release | delete.
@@ -100,7 +100,7 @@ encode_id(V) ->
     encode_binary(V).
 
 encode_name(V) ->
-    encode_string(V).
+    encode_binary(V).
 
 encode_nodename(V) when is_atom(V) ->
     encode_string(erlang:atom_to_list(V));
@@ -157,7 +157,7 @@ decode_id(V) ->
     decode_binary(V).
 
 decode_name(V) ->
-    decode_string(V).
+    decode_binary(V).
 
 decode_nodename(V) ->
     decode_string(V).
