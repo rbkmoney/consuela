@@ -49,7 +49,7 @@ start_link(Session, Client, Opts) ->
 %%
 
 -type st() :: #{
-    session  => consuela_session:t(),
+    session  := consuela_session:t(),
     client   := consuela_client:t(),
     interval := interval(),
     timer    => reference(),
@@ -62,6 +62,7 @@ start_link(Session, Client, Opts) ->
     {ok, st()}.
 
 init({Session, Client, Opts}) ->
+    _ = erlang:process_flag(trap_exit, true),
     St = maps:fold(
         fun
             (pulse, {Module, _} = V, St) when is_atom(Module) ->
@@ -127,9 +128,8 @@ renew_session(St0 = #{session := #{id := ID}, client := Client}) ->
     _ = beat({session, {renewed, Session}}, St),
     St.
 
-destroy_session(St0 = #{session := Session = #{id := ID}, client := Client}) ->
+destroy_session(St = #{session := Session = #{id := ID}, client := Client}) ->
     ok = consuela_session:destroy(ID, Client),
-    St = maps:remove(session, St0),
     _ = beat({session, {destroyed, Session}}, St),
     St.
 
