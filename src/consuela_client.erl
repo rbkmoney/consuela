@@ -29,7 +29,7 @@
 %% pulse
 
 -type beat() ::
-    {request, {method(), url(), headers(), binary()}} |
+    {request, {method(), binary(), headers(), binary()}} |
     {result, {ok, 100..599, headers(), binary()} | {error, term()}}.
 
 -callback handle_beat(beat(), _Opts) ->
@@ -101,7 +101,7 @@ mk_transport_opts(Opts, TransOpts0) ->
 %%
 
 -type method()   :: get | post | put | delete.
--type resource() :: iodata().
+-type resource() :: iodata() | {iodata(), query()}.
 -type content()  :: jsx:json_term() | {raw, iodata()} | undefined.
 
 -type reason() ::
@@ -110,13 +110,13 @@ mk_transport_opts(Opts, TransOpts0) ->
     {transport_error, term()}.
 
 -spec request(method(), resource(), t()) ->
-    {ok, jsx:json_term()} | {error, reason()}.
+    ok | {ok, jsx:json_term()} | {error, reason()}.
 
 request(Method, Resource, C) ->
     request(Method, Resource, undefined, C).
 
 -spec request(method(), resource(), content(), t()) ->
-    {ok, jsx:json_term()} | {error, reason()}.
+    ok | {ok, jsx:json_term()} | {error, reason()}.
 
 request(Method, Resource, Content, C) ->
     Url = mk_request_url(Resource, C),
@@ -137,10 +137,12 @@ decode_response(<<>>) ->
 decode_response(RespBody) ->
     {ok, jsx:decode(RespBody, [return_maps])}.
 
-mk_request_url(Resource, #{url := Url, query := Query}) ->
-    Qs = cow_qs:qs(Query),
+mk_request_url({Resource, Query}, #{url := Url, query := Query0}) ->
+    Qs = cow_qs:qs(Query ++ Query0),
     Path = to_binary(Resource),
-    <<Url/binary, Path/binary, "?", Qs/binary>>.
+    <<Url/binary, Path/binary, "?", Qs/binary>>;
+mk_request_url(Resource, Client) ->
+    mk_request_url({Resource, []}, Client).
 
 mk_headers(undefined, #{headers := Hs}) ->
     Hs;
@@ -162,6 +164,9 @@ issue_request(Request = {Method, Url, Headers, Body}, C = #{opts := TransOpts}) 
     _ = beat({result, Result}, C),
     Result.
 
+to_binary(V) ->
+    erlang:iolist_to_binary(V).
+
 %%
 
 -spec beat(beat(), t()) ->
@@ -170,9 +175,6 @@ issue_request(Request = {Method, Url, Headers, Body}, C = #{opts := TransOpts}) 
 beat(Beat, #{pulse := {Module, Opts}}) ->
     % TODO handle errors?
     Module:handle_beat(Beat, Opts).
-
-to_binary(V) ->
-    erlang:iolist_to_binary(V).
 
 %% pulse
 
