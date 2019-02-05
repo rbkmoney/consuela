@@ -105,7 +105,12 @@ mk_transport_opts(Opts, TransOpts0) ->
 -type content()  :: jsx:json_term() | {raw, iodata()} | undefined.
 
 -type reason() ::
-    {client_error, {400..499, binary()}} | % TODO Less HTTP details? E.g. `notfound`, `forbidden`, etc.
+    unauthorized                   |
+    notfound                       |
+    {error_class(), error_cause()} .
+
+-type error_class() :: failed | unknown.
+-type error_cause() ::
     {server_error, {500..599, binary()}} |
     {transport_error, term()}.
 
@@ -124,12 +129,18 @@ request(Method, Resource, Content, C) ->
     case issue_request(Request, C) of
         {ok, Status, _Headers, RespBody} when Status >= 200, Status < 300 ->
             decode_response(RespBody);
-        {ok, Status, _Headers, RespBody} when Status >= 400, Status < 500 ->
-            {error, {client_error, Status, RespBody}};
+        {ok, Status, _Headers, _RespBody} when Status >= 400, Status < 500 ->
+            {error, get_client_error(Status)};
         {ok, Status, _Headers, RespBody} when Status >= 500, Status < 600 ->
-            {error, {server_error, {Status, RespBody}}};
+            {error, {
+                get_server_error_class(Status),
+                {server_error, {Status, RespBody}}
+            }};
         {error, Reason} ->
-            {error, {transport_error, Reason}}
+            {error, {
+                get_transport_error_class(Reason),
+                {transport_error, Reason}}
+            }
     end.
 
 decode_response(<<>>) ->
@@ -163,6 +174,30 @@ issue_request(Request = {Method, Url, Headers, Body}, C = #{opts := TransOpts}) 
     Result = hackney:request(Method, Url, Headers, Body, TransOpts),
     _ = beat({result, Result}, C),
     Result.
+
+get_client_error(401) ->
+    unauthorized;
+get_client_error(404) ->
+    notfound.
+
+get_server_error_class(Code) when
+    Code == 501 orelse
+    Code == 503
+->
+    failed;
+get_server_error_class(_) ->
+    unknown.
+
+get_transport_error_class(Reason) when
+    Reason == nxdomain orelse
+    Reason == enetdown orelse
+    Reason == enetunreach orelse
+    Reason == econnrefused orelse
+    Reason == connect_timeout
+->
+    failed;
+get_transport_error_class(_) ->
+    unknown.
 
 to_binary(V) ->
     erlang:iolist_to_binary(V).
