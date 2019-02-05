@@ -60,7 +60,9 @@ create(Name, Node, TTL, Behavior, Client) ->
     Content = encode_params({Name, Node, TTL, Behavior}),
     case consuela_client:request(put, Resource, Content, Client) of
         {ok, SessionID} ->
-            {ok, decode_session_id(SessionID)}
+            {ok, decode_session_id(SessionID)};
+        {error, Reason} ->
+            erlang:error(Reason)
     end.
 
 get(ID, Client) ->
@@ -69,21 +71,27 @@ get(ID, Client) ->
         {ok, [Session]} ->
             {ok, decode_session(Session)};
         {ok, []} ->
-            {error, notfound}
+            {error, notfound};
+        {error, Reason} ->
+            erlang:error(Reason)
     end.
 
 destroy(ID, Client) ->
     Resource = [<<"/v1/session/destroy/">>, encode_id(ID)],
     case consuela_client:request(delete, Resource, Client) of
         {ok, true} ->
-            ok
+            ok;
+        {error, Reason} ->
+            erlang:error(Reason)
     end.
 
 renew(ID, Client) ->
     Resource = [<<"/v1/session/renew/">>, encode_id(ID)],
     case consuela_client:request(put, Resource, Client) of
         {ok, [Session]} ->
-            {ok, decode_session(Session)}
+            {ok, decode_session(Session)};
+        {error, Reason} ->
+            erlang:error(Reason)
     end.    
 
 %%

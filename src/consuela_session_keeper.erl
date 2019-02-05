@@ -5,8 +5,10 @@
 
 %% api
 
+-type deadline() :: integer().
+-type session()  :: consuela_session:t().
 -type interval() ::
-    pos_integer()       | % milliseconds
+    pos_integer()       | % seconds
     genlib_rational:t() . % fraction of TTL
 
 -export([start_link/3]).
@@ -24,9 +26,22 @@
 %% pulse
 
 -type beat() ::
-    {session              , {renewed | destroyed, consuela_session:t()}} |
-    {{timer, reference()} , {started, timeout()} | fired | reset} |
-    {unexpected           , {{call, from()} | cast | info, _Msg}}.
+    {session,
+        {renewal,
+            {succeeded, session(), deadline()} |
+            {failed, _Reason, [erlang:stack_item()]}
+        } |
+        destroyed |
+        expired
+    } |
+    {{timer, reference()},
+        {started, timeout()} |
+        fired |
+        reset
+    } |
+    {unexpected,
+        {{call, from()} | cast | info, _Msg}
+    }.
 
 -callback handle_beat(beat(), _PulseOpts) ->
     _.
@@ -40,7 +55,7 @@
     pulse    => {module(), _PulseOpts}
 }.
 
--spec start_link(consuela_session:t(), consuela_client:t(), opts()) ->
+-spec start_link(session(), consuela_client:t(), opts()) ->
     {ok, pid()}.
 
 start_link(Session, Client, Opts) ->
@@ -50,6 +65,7 @@ start_link(Session, Client, Opts) ->
 
 -type st() :: #{
     session  := consuela_session:t(),
+    deadline := deadline(),
     client   := consuela_client:t(),
     interval := interval(),
     timer    => reference(),
@@ -74,6 +90,7 @@ init({Session, Client, Opts}) ->
         end,
         #{
             session  => Session,
+            deadline => compute_deadline(Session),
             client   => Client,
             interval => {1, 3}, % third of a TTL by default
             pulse    => {?MODULE, []}
@@ -96,14 +113,16 @@ handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
     {noreply, St}.
 
--spec handle_info(_Info, st()) ->
+-type info() :: {timeout, reference(), renew} | timeout.
+
+-spec handle_info(info(), st()) ->
     {noreply, st()}.
 
 handle_info({timeout, TimerRef, renew}, St = #{timer := TimerRef}) ->
     _ = beat({{timer, TimerRef}, fired}, St),
-    {noreply, restart_timer(renew_session(St))};
+    {noreply, restart_timer(try_renew_session(St))};
 handle_info(timeout, St) ->
-    {noreply, restart_timer(renew_session(St))};
+    {noreply, restart_timer(try_renew_session(St))};
 handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
     {noreply, St}.
@@ -122,16 +141,38 @@ code_change(_Vsn, St, _Extra) ->
 
 %%
 
+try_renew_session(St = #{deadline := Deadline}) ->
+    case get_timestamp() of
+        Now when Now < Deadline ->
+            renew_session(St);
+        _ ->
+            _ = beat({session, expired}, St),
+            exit(session_expired)
+    end.
+
 renew_session(St0 = #{session := #{id := ID}, client := Client}) ->
-    {ok, Session} = consuela_session:renew(ID, Client),
-    St = St0#{session := Session},
-    _ = beat({session, {renewed, Session}}, St),
+    try consuela_session:renew(ID, Client) of
+        {ok, Session} ->
+            Deadline = compute_deadline(Session),
+            St = St0#{session := Session, deadline := Deadline},
+            _ = beat({session, {renewal, {succeeded, Session, Deadline}}}, St),
+            St
+    catch
+        error:Reason:Stacktrace ->
+            _ = beat({session, {renewal, {failed, Reason, Stacktrace}}}, St0),
+            St0
+    end.
+
+destroy_session(St = #{session := #{id := ID}, client := Client}) ->
+    ok = consuela_session:destroy(ID, Client),
+    _ = beat({session, destroyed}, St),
     St.
 
-destroy_session(St = #{session := Session = #{id := ID}, client := Client}) ->
-    ok = consuela_session:destroy(ID, Client),
-    _ = beat({session, {destroyed, Session}}, St),
-    St.
+compute_deadline(#{ttl := TTL}) ->
+    get_timestamp() + TTL.
+
+get_timestamp() ->
+    erlang:monotonic_time(seconds).
 
 %%
 
@@ -140,13 +181,13 @@ restart_timer(St) ->
 
 start_timer(St0) ->
     Timeout = compute_timeout(St0),
-    TimerRef = erlang:start_timer(Timeout, self(), renew),
+    TimerRef = erlang:start_timer(Timeout * 1000, self(), renew),
     St = St0#{timer => TimerRef},
     _ = beat({{timer, TimerRef}, {started, Timeout}}, St),
     St.
 
 compute_timeout(#{interval := Ratio, session := #{ttl := TTL}}) when is_tuple(Ratio) ->
-    genlib_rational:round(genlib_rational:mul(Ratio, genlib_rational:new(TTL * 1000)));
+    genlib_rational:round(genlib_rational:mul(Ratio, genlib_rational:new(TTL)));
 compute_timeout(#{interval := Timeout}) when is_integer(Timeout) ->
     Timeout.
 
