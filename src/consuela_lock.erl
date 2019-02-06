@@ -5,11 +5,12 @@
 
 %%
 
--type namespace() :: binary().
--type id()        :: {namespace(), term()}.
--type value()     :: term().
--type index()     :: integer().
--type session()   :: consuela_session:id().
+-type namespace()   :: binary().
+-type id()          :: {namespace(), term()}.
+-type value()       :: term().
+-type index()       :: integer().
+-type session()     :: consuela_session:id().
+-type consistency() :: default | consistent | stale.
 
 -type lock() :: #{
     id      := id(),
@@ -23,18 +24,20 @@
 
 -export([hold/4]).
 -export([release/2]).
+-export([release/3]).
 -export([get/2]).
+-export([get/3]).
 
 %%
 
 -spec hold(id(), value(), session(), consuela_client:t()) ->
-    {ok, held} | {error, failed}.
+    ok | {error, failed}.
 
 hold(ID, Value, Session, Client) ->
     Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"acquire">>, Session}]},
     case consuela_client:request(put, Resource, {raw, encode_value(Value)}, Client) of
         {ok, true} ->
-            {ok, held};
+            ok;
         {ok, false} ->
             {error, failed}
         % TODO
@@ -43,35 +46,54 @@ hold(ID, Value, Session, Client) ->
     end.
 
 -spec release(lock(), consuela_client:t()) ->
-    {ok, released}.
+    ok | {error, failed}.
 
-release(#{id := ID, session := Session, value := Value}, Client) ->
-    Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"release">>, Session}]},
-    case consuela_client:request(put, Resource, {raw, encode_value(Value)}, Client) of
-        {ok, true} ->
-            {ok, released};
-        {ok, false} ->
-            {error, failed}
-    end;
+-spec release(id(), session(), consuela_client:t()) ->
+    ok | {error, failed}.
+
+release(#{id := ID, session := Session}, Client) ->
+    release(ID, Session, Client);
 release(#{}, _Client) ->
     erlang:error(badarg).
+
+release(ID, Session, Client) ->
+    Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"release">>, Session}]},
+    case consuela_client:request(put, Resource, Client) of
+        {ok, true} ->
+            ok;
+        {ok, false} ->
+            {error, failed}
+    end.
 
 -spec get(id(), consuela_client:t()) ->
     {ok, lock()} | {error, notfound}.
 
-get(ID = {NS, _}, Client) ->
-    Resource = [<<"/v1/kv/">> | encode_id(ID)],
+get(ID, Client) ->
+    get(ID, default, Client).
+
+-spec get(id(), consistency(), consuela_client:t()) ->
+    {ok, lock()} | {error, notfound}.
+
+get(ID = {NS, _}, Consistency, Client) ->
+    Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{encode_consistency(Consistency), true}]},
     case consuela_client:request(get, Resource, Client) of
         {ok, [Lock]} ->
             {ok, decode_lock(Lock, NS)};
-        {error, {client_error, 404, _}} ->
+        {error, notfound} ->
             {error, notfound}
     end.
+
+%%
 
 encode_id({NS, Name}) ->
     [NS, $/, encode_name(Name)].
 
-%%
+encode_consistency(default) ->
+    [];
+encode_consistency(consistent) ->
+    [{<<"consistent">>, true}];
+encode_consistency(stale) ->
+    [{<<"stale">>, true}].
 
 encode_name(V) ->
     encode_base62(encode_term(V)).
