@@ -14,7 +14,7 @@
 
 -type lock() :: #{
     id      := id(),
-    value   := value(),
+    value   => value(),
     session => session(),
     indexes := {_Create :: index(), _Modify :: index(), _Lock :: index()}
 }.
@@ -76,11 +76,11 @@ get(ID, Client) ->
 -spec get(id(), consistency(), consuela_client:t()) ->
     {ok, lock()} | {error, notfound}.
 
-get(ID = {NS, _}, Consistency, Client) ->
+get(ID, Consistency, Client) ->
     Resource = {[<<"/v1/kv/">> | encode_id(ID)], encode_consistency(Consistency)},
     case consuela_client:request(get, Resource, Client) of
         {ok, [Lock]} ->
-            {ok, decode_lock(Lock, NS)};
+            {ok, decode_lock(Lock, ID)};
         {error, notfound} ->
             {error, notfound}
     end.
@@ -111,42 +111,34 @@ encode_term(V) ->
 
 %%
 
-decode_lock(#{
-    <<"Key">>         := Name,
-    <<"Value">>       := Value,
-    <<"Session">>     := Session,
+decode_lock(V = #{
+    <<"Key">>         := _,
     <<"CreateIndex">> := CreateIndex,
     <<"ModifyIndex">> := ModifyIndex,
     <<"LockIndex">>   := LockIndex
     % TODO
     % <<"Flags">>     := Flags,
-}, NS) ->
+}, ID) ->
     genlib_map:compact(#{
-        id      => {NS, decode_name(Name)},
-        value   => decode_value(Value),
-        session => decode_maybe(fun decode_session/1, Session),
+        id      => ID,
+        value   => decode_maybe(fun decode_value/1, maps:get(<<"Value">>, V, null)),
+        session => decode_maybe(fun decode_session/1, maps:get(<<"Session">>, V, null)),
         indexes => {decode_index(CreateIndex), decode_index(ModifyIndex), decode_index(LockIndex)}
     }).
 
 decode_session(V) ->
     decode_binary(V).
 
-decode_maybe(_, undefined) ->
+decode_maybe(_, null) ->
     undefined;
 decode_maybe(D, V) ->
     D(V).
-
-decode_name(V) ->
-    decode_term(decode_base62(V)).
 
 decode_value(V) ->
     decode_term(decode_base64(V)).
 
 decode_index(V) ->
     decode_integer(V).
-
-decode_base62(V) ->
-    binary:encode_unsigned(genlib_format:parse_int_base(V, 62)).
 
 decode_base64(V) ->
     base64:decode(V).
