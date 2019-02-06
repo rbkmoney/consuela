@@ -78,7 +78,7 @@ get(ID, Client) ->
 
 destroy(ID, Client) ->
     Resource = [<<"/v1/session/destroy/">>, encode_id(ID)],
-    case consuela_client:request(delete, Resource, Client) of
+    case consuela_client:request(put, Resource, Client) of
         {ok, true} ->
             ok;
         {error, Reason} ->
