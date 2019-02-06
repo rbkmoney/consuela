@@ -75,7 +75,7 @@ start_link(Session, Client, Opts) ->
 -type from() :: {pid(), reference()}.
 
 -spec init({consuela_session:t(), consuela_client:t(), opts()}) ->
-    {ok, st()}.
+    {ok, st(), 0}.
 
 init({Session, Client, Opts}) ->
     _ = erlang:process_flag(trap_exit, true),
@@ -186,10 +186,10 @@ start_timer(St0) ->
     _ = beat({{timer, TimerRef}, {started, Timeout}}, St),
     St.
 
-compute_timeout(#{interval := Ratio, session := #{ttl := TTL}}) when is_tuple(Ratio) ->
-    genlib_rational:round(genlib_rational:mul(Ratio, genlib_rational:new(TTL)));
 compute_timeout(#{interval := Timeout}) when is_integer(Timeout) ->
-    Timeout.
+    Timeout;
+compute_timeout(#{interval := Ratio, session := #{ttl := TTL}}) ->
+    genlib_rational:round(genlib_rational:mul(Ratio, genlib_rational:new(TTL))).
 
 try_reset_timer(St0 = #{timer := TimerRef}) ->
     St = case erlang:cancel_timer(TimerRef) of
