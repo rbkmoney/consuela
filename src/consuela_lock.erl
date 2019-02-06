@@ -38,6 +38,8 @@ hold(ID, Value, Session, Client) ->
     case consuela_client:request(put, Resource, {raw, encode_value(Value)}, Client) of
         {ok, true} ->
             ok;
+        % NOTE
+        % Either some other session holds a lock or: `Rejecting lock of ... due to lock-delay until ...`
         {ok, false} ->
             {error, failed}
         % TODO
@@ -75,7 +77,7 @@ get(ID, Client) ->
     {ok, lock()} | {error, notfound}.
 
 get(ID = {NS, _}, Consistency, Client) ->
-    Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{encode_consistency(Consistency), true}]},
+    Resource = {[<<"/v1/kv/">> | encode_id(ID)], encode_consistency(Consistency)},
     case consuela_client:request(get, Resource, Client) of
         {ok, [Lock]} ->
             {ok, decode_lock(Lock, NS)};
