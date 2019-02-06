@@ -80,6 +80,7 @@
 -spec register(name(), pid()) ->
     ok | {error, exists}.
 
+%% consuela_registry:start_link(<<"ns">>, Session1, Cl1, #{pulse => {consuela_registry, [trace]}}).
 start_link(Namespace, Session, Client, Opts) ->
     % NOTE
     % Registering as a singleton on the node as it's the only way for a process to work like a process
@@ -188,7 +189,12 @@ handle_call(Call, From, St) ->
     {reply, _Result, st()}.
 
 handle_regular_call({Action, {Name, Pid}}, _From, St0) when Action == register; Action == unregister ->
-    handle_activity(Action, Name, Pid, St0).
+    case handle_activity(Action, Name, Pid, St0) of
+        {ok, St1} ->
+            {reply, ok, St1};
+        {error, _} = Error ->
+            {reply, Error, St0}
+    end.
 
 -spec handle_cast(_Cast, st()) ->
     {noreply, st()}.
@@ -255,8 +261,8 @@ register(Name, Pid, St) ->
             {error, exists}
     end.
 
-register_global(Name, Pid, St0 = #{namespace := Namespace, session := Session, client := Client}) ->
-    case consuela_lock:hold({Namespace, Name}, Pid, Session, Client) of
+register_global(Name, Pid, St0 = #{namespace := Namespace, session := #{id := Sid}, client := Client}) ->
+    case consuela_lock:hold({Namespace, Name}, Pid, Sid, Client) of
         ok ->
             % Store registration locally and monitor it
             ok = store_local(Name, Pid),
@@ -280,10 +286,10 @@ unregister(Name, Pid, St) ->
             {error, notfound}
     end.
 
-unregister_global(Name, _Pid, St0 = #{namespace := Namespace, session := Session, client := Client}) ->
+unregister_global(Name, _Pid, St0 = #{namespace := Namespace, session := #{id := Sid}, client := Client}) ->
     % TODO
     % Need to make sure that value under lock is actually `Pid`? Little afraid if that happens not to be
-    case consuela_lock:release({Namespace, Name}, Session, Client) of
+    case consuela_lock:release({Namespace, Name}, Sid, Client) of
         ok ->
             ok = remove_local(Name),
             St1 = demonitor_name(Name, St0),
@@ -311,7 +317,10 @@ lookup_global(Namespace, Name, Client) ->
 
 monitor_name(Name, Pid, St = #{monitors := Monitors}) ->
     MRef = erlang:monitor(process, Pid),
-    St#{monitors := Monitors#{MRef => {Name, Pid}}}.
+    St#{monitors := Monitors#{
+        MRef => {Name, Pid},
+        Name => MRef
+    }}.
 
 demonitor_name(Name, St = #{monitors := Monitors}) ->
     #{Name := MRef} = Monitors,
