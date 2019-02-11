@@ -24,7 +24,7 @@
 
 -export([hold/4]).
 -export([release/2]).
--export([release/3]).
+-export([delete/2]).
 -export([get/2]).
 -export([get/3]).
 
@@ -37,20 +37,19 @@ hold(ID, Value, Session, Client) ->
     Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"acquire">>, encode_session(Session)}]},
     case consuela_client:request(put, Resource, {raw, encode_value(Value)}, Client) of
         {ok, true} ->
+            % Lock acquired successfully
             ok;
-        % NOTE
-        % Either some other session holds a lock or: `Rejecting lock of ... due to lock-delay until ...`
         {ok, false} ->
-            {error, failed}
+            % Either some other session holds a lock or: `Rejecting lock of ... due to lock-delay until ...`
+            {error, failed};
         % TODO
         % handle `{error,{server_error,{500, <<"invalid session...">>}}}`?
         % handle `{error,{server_error,{500, <<"rpc error making call: invalid session...">>}}}`?
+        {error, Reason} ->
+            erlang:error(Reason)
     end.
 
 -spec release(lock(), consuela_client:t()) ->
-    ok | {error, failed}.
-
--spec release(id(), session(), consuela_client:t()) ->
     ok | {error, failed}.
 
 release(#{id := ID, session := Session}, Client) ->
@@ -58,14 +57,32 @@ release(#{id := ID, session := Session}, Client) ->
 release(#{}, _Client) ->
     erlang:error(badarg).
 
+-spec release(id(), session(), consuela_client:t()) ->
+    ok | {error, failed}.
+
 release(ID, Session, Client) ->
     Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"release">>, encode_session(Session)}]},
     case consuela_client:request(put, Resource, Client) of
         {ok, true} ->
             ok;
         {ok, false} ->
-            {error, failed}
+            {error, failed};
+        {error, Reason} ->
+            erlang:error(Reason)
     end.
+
+-spec delete(lock(), consuela_client:t()) ->
+    ok | {error, failed}.
+
+delete(#{id := ID, indexes := {_, ModifyIndex, _}}, Client) ->
+    Resource = {[<<"/v1/kv/">> | encode_id(ID)], encode_cas(ModifyIndex)},
+    case consuela_client:request(delete, Resource, Client) of
+        {ok, true} ->
+            ok;
+        {error, Reason} ->
+            erlang:error(Reason)
+    end.
+
 
 -spec get(id(), consuela_client:t()) ->
     {ok, lock()} | {error, notfound}.
@@ -82,7 +99,9 @@ get(ID, Consistency, Client) ->
         {ok, [Lock]} ->
             {ok, decode_lock(Lock, ID)};
         {error, notfound} ->
-            {error, notfound}
+            {error, notfound};
+        {error, Reason} ->
+            erlang:error(Reason)
     end.
 
 %%
@@ -96,6 +115,9 @@ encode_consistency(consistent) ->
     [{<<"consistent">>, true}];
 encode_consistency(stale) ->
     [{<<"stale">>, true}].
+
+encode_cas(V) ->
+    [{<<"cas">>, erlang:integer_to_binary(V)}].
 
 encode_name(V) ->
     encode_base62(encode_term(V)).

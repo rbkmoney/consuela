@@ -54,6 +54,11 @@
         succeeded |
         {failed, _Reason}
     } |
+    {dangling,
+        {enqueued, name()} |
+        {dequeued, name()} |
+        {{timer, reference()}, {started, timeout()} | fired | reset}
+    } |
     {unexpected,
         {{call, from()} | cast | info, _Msg}
     }.
@@ -65,8 +70,9 @@
 
 %%
 
--define(REGISTRATION_TIMEOUT , 1000). % TODO too short?
--define(REGISTRATION_ETC     , 100).  % TODO too short?
+-define(REGISTRATION_TIMEOUT   , 1000). % TODO too short?
+-define(REGISTRATION_ETC       , 100).  % TODO too short?
+-define(DANGLING_RETRY_TIMEOUT , 1000). % TODO put into options
 
 -type namespace() :: consuela_lock:namespace().
 
@@ -77,24 +83,27 @@
 -spec start_link(namespace(), consuela_session:t(), consuela_client:t(), opts()) ->
     {ok, pid()}.
 
--spec register(name(), pid()) ->
-    ok | {error, exists}.
-
-%% consuela_registry:start_link(<<"ns">>, Session1, Cl1, #{pulse => {consuela_registry, [trace]}}).
 start_link(Namespace, Session, Client, Opts) ->
-    % NOTE
     % Registering as a singleton on the node as it's the only way for a process to work like a process
     % registry from the point of view of OTP.
     gen_server:start_link({local, ?MODULE}, ?MODULE, {Namespace, Session, Client, Opts}, []).
 
+-spec register(name(), pid()) ->
+    ok | {error, exists}.
+
 register(Name, Pid) when is_pid(Pid) ->
-    deadline_call({register, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT).
+    handle_result(deadline_call({register, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT)).
 
 -spec unregister(name(), pid()) ->
     ok | {error, notfound}.
 
 unregister(Name, Pid) when is_pid(Pid) ->
-    deadline_call({unregister, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT).
+    handle_result(deadline_call({unregister, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT)).
+
+handle_result({done, Done}) ->
+    Done;
+handle_result({failed, Error}) ->
+    erlang:error(Error).
 
 -spec lookup(name()) ->
     {ok, pid()} | {error, notfound}.
@@ -129,6 +138,7 @@ get_now() ->
 -type st() :: #{
     store     := store(),
     monitors  := #{reference() => {name(), pid()}, name() => reference()},
+    dangling  := {queue:queue(name()), _TRef :: reference() | undefined},
     namespace := namespace(),
     session   := consuela_session:t(),
     client    := consuela_client:t(),
@@ -152,6 +162,7 @@ init({Namespace, Session, Client, Opts}) ->
         #{
             store     => Store,
             monitors  => #{},
+            dangling  => {queue:new(), undefined},
             namespace => Namespace,
             session   => Session,
             client    => Client,
@@ -168,7 +179,7 @@ init({Namespace, Session, Client, Opts}) ->
     {register | unregister, {name(), pid()}}.
 
 -spec handle_call({deadline, deadline(), call()}, from(), st()) ->
-    {reply, _Result, st()} | {noreply, st()}.
+    {reply, {done, _Done} | {failed, _Failed}, st()} | {noreply, st()}.
 
 handle_call({deadline_call, Deadline, Call} = Subject, From, St) ->
     case get_now() of
@@ -188,13 +199,12 @@ handle_call(Call, From, St) ->
 -spec handle_regular_call(call(), from(), st()) ->
     {reply, _Result, st()}.
 
-handle_regular_call({Action, {Name, Pid}}, _From, St0) when Action == register; Action == unregister ->
-    case handle_activity(Action, Name, Pid, St0) of
-        {ok, St1} ->
-            {reply, ok, St1};
-        {error, _} = Error ->
-            {reply, Error, St0}
-    end.
+handle_regular_call({Action, {Name, Pid}}, _From, St0) when
+    Action == register;
+    Action == unregister
+->
+    {Result, St1} = handle_activity(Action, Name, Pid, St0),
+    {reply, Result, St1}.
 
 -spec handle_cast(_Cast, st()) ->
     {noreply, st()}.
@@ -205,12 +215,15 @@ handle_cast(Cast, St) ->
 
 -type down() :: {'DOWN', reference(), process, pid(), _Reason}.
 
--spec handle_info(down(), st()) ->
-    {noreply, st()}.
+-spec handle_info(down() | {timeout, reference(), dangling}, st()) ->
+    {noreply, st()} | {noreply, st(), 0}.
 
 handle_info({'DOWN', MRef, process, Pid, _Reason}, St0) ->
     % TODO beat?
-    {ok, St1} = handle_down(MRef, Pid, St0),
+    {_Result, St1} = handle_down(MRef, Pid, St0),
+    {noreply, St1};
+handle_info({timeout, TimerRef, dangling}, St0) ->
+    St1 = handle_dangling_timer(TimerRef, St0),
     {noreply, St1};
 handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
@@ -233,44 +246,47 @@ code_change(_Vsn, St, _Extra) ->
 handle_activity(Action, Name, Pid, St0) ->
     Subject = {Action, {Name, Pid}},
     _ = beat({Subject, started}, St0),
-    Result = case Action of
+    {Result, St1} = case Action of
         register ->
             register(Name, Pid, St0);
         unregister ->
             unregister(Name, Pid, St0)
     end,
-    case Result of
-        {ok, St1} ->
-            _ = beat({Subject, succeeded}, St1),
-            {ok, St1};
-        {error, _} = Error ->
-            _ = beat({Subject, {failed, Error}}, St0),
-            Error
-    end.
+    _ = beat({Subject, Result}, St1),
+    {Result, St1}.
 
 register(Name, Pid, St) ->
     case lookup_local_store(Name) of
         {ok, Pid} ->
             % If it's already registered locally do nothing
-            {ok, St};
+            {{done, ok}, St};
         {error, notfound} ->
             % If it's not there time to go global
             register_global(Name, Pid, St);
         {ok, _} ->
             % If the name already taken locally error out
-            {error, exists}
+            {{done, {error, exists}}, St}
     end.
 
-register_global(Name, Pid, St0 = #{namespace := Namespace, session := #{id := Sid}, client := Client}) ->
-    case consuela_lock:hold({Namespace, Name}, Pid, Sid, Client) of
+register_global(Name, Pid, St0 = #{session := #{id := Sid}, client := Client}) ->
+    ID = mk_lock_id(Name, St0),
+    try consuela_lock:hold(ID, Pid, Sid, Client) of
         ok ->
             % Store registration locally and monitor it
             ok = store_local(Name, Pid),
             St1 = monitor_name(Name, Pid, St0),
-            {ok, St1};
+            {{done, ok}, try_start_dangling_timer(St1)};
         {error, failed} ->
             % Someone on another node probably taken it already
-            {error, exists}
+            {{done, {error, exists}}, try_start_dangling_timer(St0)}
+    catch
+        error:{failed, _} = Reason ->
+            % Nothing to reconcile anyway
+            {{failed, {error, Reason}}, St0};
+        error:{unknown, _} = Reason ->
+            % Lock may be held from the Consul's point of view, need to ensure it will be deleted eventually
+            St1 = enqueue_dangling_name(Name, Pid, St0),
+            {{failed, {error, Reason}}, St1}
     end.
 
 unregister(Name, Pid, St) ->
@@ -280,21 +296,41 @@ unregister(Name, Pid, St) ->
             unregister_global(Name, Pid, St);
         {ok, _} ->
             % There is another process with this name
-            {error, notfound};
+            {{done, {error, notfound}}, St};
         {error, notfound} ->
             % There was no such registration
-            {error, notfound}
+            {{done, {error, notfound}}, St}
     end.
 
-unregister_global(Name, _Pid, St0 = #{namespace := Namespace, session := #{id := Sid}, client := Client}) ->
-    % TODO
-    % Need to make sure that value under lock is actually `Pid`? Little afraid if that happens not to be
-    case consuela_lock:release({Namespace, Name}, Sid, Client) of
-        ok ->
-            ok = remove_local(Name),
-            St1 = demonitor_name(Name, St0),
-            {ok, St1}
+unregister_global(Name, Pid, St0) ->
+    {Result, St1} = ensure_delete_lock(Name, Pid, St0),
+    ok = remove_local(Name),
+    St2 = demonitor_name(Name, St1),
+    {Result, St2}.
+
+ensure_delete_lock(Name, Pid, St0 = #{session := Session, client := Client}) ->
+    ID = mk_lock_id(Name, St0),
+    try
+        {Result, St1} = case consuela_lock:get(ID, default, Client) of
+            {ok, Lock = #{value := Pid, session := Session}} ->
+                % Looks like the lock is still ours
+                ok = consuela_lock:delete(Lock, Client),
+                {{done, ok}, St0};
+            {ok, #{session := AnotherSession}} when Session /= AnotherSession ->
+                % Looks like someone else is quick enough to hold it already
+                {{done, ok}, St0};
+            {error, notfound} ->
+                % Looks like we already denounced it
+                {{done, ok}, St0}
+        end,
+        {Result, try_start_dangling_timer(St1)}
+    catch
+        error:{Class, Reason} when Class == failed; Class == unknown ->
+            {{failed, {error, Reason}}, enqueue_dangling_name(Name, Pid, St0)}
     end.
+
+mk_lock_id(Name, #{namespace := Namespace}) ->
+    {Namespace, Name}.
 
 lookup(Name, Namespace, Client) ->
     % Doing local lookup first
@@ -302,18 +338,67 @@ lookup(Name, Namespace, Client) ->
         {ok, Pid} ->
             {ok, Pid};
         {error, notfound} ->
-            lookup_global(Name, Namespace, Client)
+            % TODO
+            % Allow to tune consistency through `start_link`'s opts?
+            lookup_global(Name, stale, Namespace, Client)
     end.
 
-lookup_global(Namespace, Name, Client) ->
-    % TODO
-    % Allow to tune consistency through `start_link`'s opts?
-    case consuela_lock:get({Namespace, Name}, stale, Client) of
-        {ok, #{value := Pid}} ->
+lookup_global(Name, Consistency, Namespace, Client) ->
+    case consuela_lock:get({Namespace, Name}, Consistency, Client) of
+        {ok, #{value := Pid, session := _}} when is_pid(Pid) ->
+            % The lock is still held by some session
             {ok, Pid};
+        {ok, #{value := undefined}} ->
+            % The lock was probably released
+            {error, notfound};
         {error, notfound} ->
             {error, notfound}
     end.
+
+%%
+
+enqueue_dangling_name(Name, Pid, St0 = #{dangling := {Queue, TimerRef}}) ->
+    Dangling = {Name, Pid},
+    St1 = St0#{dangling := {queue:in(Dangling, Queue), TimerRef}},
+    _ = beat({dangling, {enqueued, Dangling}}, St0),
+    try_start_dangling_timer(?DANGLING_RETRY_TIMEOUT, St1).
+
+try_start_dangling_timer(St) ->
+    try_start_dangling_timer(0, St).
+
+try_start_dangling_timer(Timeout, St = #{dangling := {Queue, _}}) ->
+    case queue:len(Queue) of
+        N when N > 0 ->
+            start_dangling_timer(Timeout, try_reset_dangling_timer(St));
+        0 ->
+            St
+    end.
+
+try_reset_dangling_timer(St = #{dangling := {Queue, TimerRef}}) when is_reference(TimerRef) ->
+    ok = consuela_timer:reset(TimerRef),
+    _ = beat({dangling, {{timer, TimerRef}, reset}}, St),
+    St#{dangling := {Queue, undefined}};
+try_reset_dangling_timer(St = #{dangling := {_, undefined}}) ->
+    St.
+
+start_dangling_timer(Timeout, St = #{dangling := {Queue, undefined}}) ->
+    TimerRef = consuela_timer:start(Timeout, dangling),
+    _ = beat({dangling, {{timer, TimerRef}, {started, Timeout}}}, St),
+    St#{dangling := {Queue, TimerRef}}.
+
+handle_dangling_timer(TimerRef, St0 = #{dangling := {Q0, TimerRef}}) ->
+    _ = beat({dangling, {{timer, TimerRef}, fired}}, St0),
+    case queue:out(Q0) of
+        {{value, {Name, Pid} = Dangling}, Q1} ->
+            St1 = St0#{dangling := {Q1, undefined}},
+            _ = beat({dangling, {dequeued, Dangling}}, St1),
+            {_Result, St2} = ensure_delete_lock(Name, Pid, St1),
+            St2;
+        {empty, Q0} ->
+            St0
+    end.
+
+%%
 
 monitor_name(Name, Pid, St = #{monitors := Monitors}) ->
     MRef = erlang:monitor(process, Pid),
