@@ -53,7 +53,6 @@ lists:foldl(
 
 fraction <- [0-9]+
 `
-io:format("~p~n", [Node]),
 lists:foldl(
     fun (<<D>>, N) -> (N + (D - $0)) / 10 end,
     0.0,
