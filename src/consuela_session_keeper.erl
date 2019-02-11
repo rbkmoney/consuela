@@ -29,7 +29,7 @@
     {session,
         {renewal,
             {succeeded, session(), deadline()} |
-            {failed, _Reason, [erlang:stack_item()]}
+            {failed, _Reason, [_StackItem]}
         } |
         destroyed |
         expired

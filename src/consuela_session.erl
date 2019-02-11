@@ -23,6 +23,7 @@
     indexes  := indexes()
 }.
 
+-export_type([id/0]).
 -export_type([name/0]).
 -export_type([nodename/0]).
 -export_type([ttl/0]).
@@ -92,7 +93,7 @@ renew(ID, Client) ->
             {ok, decode_session(Session)};
         {error, Reason} ->
             erlang:error(Reason)
-    end.    
+    end.
 
 %%
 

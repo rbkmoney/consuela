@@ -15,7 +15,8 @@
     url     := binary(),
     query   := query(),
     headers := headers(),
-    opts    := list(_TODO)
+    opts    := list(_TODO),
+    pulse   := {module(), _PulseOpts}
 }.
 
 -export_type([datacenter/0]).
@@ -115,13 +116,13 @@ mk_transport_opts(Opts, TransOpts0) ->
     {transport_error, term()}.
 
 -spec request(method(), resource(), t()) ->
-    ok | {ok, jsx:json_term()} | {error, reason()}.
+    {ok, jsx:json_term() | undefined} | {error, reason()}.
 
 request(Method, Resource, C) ->
     request(Method, Resource, undefined, C).
 
 -spec request(method(), resource(), content(), t()) ->
-    ok | {ok, jsx:json_term()} | {error, reason()}.
+    {ok, jsx:json_term() | undefined} | {error, reason()}.
 
 request(Method, Resource, Content, C) ->
     Url = mk_request_url(Resource, C),
@@ -144,7 +145,7 @@ request(Method, Resource, Content, C) ->
     end.
 
 decode_response(<<>>) ->
-    ok;
+    {ok, undefined};
 decode_response(RespBody) ->
     {ok, jsx:decode(RespBody, [return_maps])}.
 

@@ -14,7 +14,7 @@
 
 -type lock() :: #{
     id      := id(),
-    value   => value(),
+    value   := value(),
     session => session(),
     indexes := {_Create :: index(), _Modify :: index(), _Lock :: index()}
 }.
@@ -34,7 +34,7 @@
     ok | {error, failed}.
 
 hold(ID, Value, Session, Client) ->
-    Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"acquire">>, Session}]},
+    Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"acquire">>, encode_session(Session)}]},
     case consuela_client:request(put, Resource, {raw, encode_value(Value)}, Client) of
         {ok, true} ->
             ok;
@@ -59,7 +59,7 @@ release(#{}, _Client) ->
     erlang:error(badarg).
 
 release(ID, Session, Client) ->
-    Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"release">>, Session}]},
+    Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"release">>, encode_session(Session)}]},
     case consuela_client:request(put, Resource, Client) of
         {ok, true} ->
             ok;
@@ -103,35 +103,47 @@ encode_name(V) ->
 encode_value(V) ->
     encode_term(V).
 
+encode_session(V) ->
+    encode_binary(V).
+
 encode_base62(V) ->
     genlib_format:format_int_base(binary:decode_unsigned(V), 62).
 
 encode_term(V) ->
     erlang:term_to_binary(V).
 
+encode_binary(V) when is_binary(V) ->
+    V.
+
 %%
 
 decode_lock(V = #{
-    <<"Key">>         := _,
+    <<"Value">>       := Value,
     <<"CreateIndex">> := CreateIndex,
     <<"ModifyIndex">> := ModifyIndex,
     <<"LockIndex">>   := LockIndex
     % TODO
     % <<"Flags">>     := Flags,
 }, ID) ->
-    genlib_map:compact(#{
-        id      => ID,
-        value   => decode_maybe(fun decode_value/1, maps:get(<<"Value">>, V, null)),
-        session => decode_maybe(fun decode_session/1, maps:get(<<"Session">>, V, null)),
-        indexes => {decode_index(CreateIndex), decode_index(ModifyIndex), decode_index(LockIndex)}
-    }).
+    maps:fold(
+        fun
+            (<<"Session">>, Session, L) -> L#{session => decode_session(Session)};
+            (_, _, L) -> L
+        end,
+        #{
+            id      => ID,
+            value   => decode_nullable(fun decode_value/1, Value),
+            indexes => {decode_index(CreateIndex), decode_index(ModifyIndex), decode_index(LockIndex)}
+        },
+        V
+    ).
 
 decode_session(V) ->
     decode_binary(V).
 
-decode_maybe(_, null) ->
+decode_nullable(_, null) ->
     undefined;
-decode_maybe(D, V) ->
+decode_nullable(D, V) ->
     D(V).
 
 decode_value(V) ->
