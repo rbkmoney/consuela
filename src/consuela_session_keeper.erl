@@ -181,7 +181,7 @@ restart_timer(St) ->
 
 start_timer(St0) ->
     Timeout = compute_timeout(St0),
-    TimerRef = erlang:start_timer(Timeout * 1000, self(), renew),
+    TimerRef = consuela_timer:start(Timeout * 1000, renew),
     St = St0#{timer => TimerRef},
     _ = beat({{timer, TimerRef}, {started, Timeout}}, St),
     St.
@@ -192,24 +192,12 @@ compute_timeout(#{interval := Ratio, session := #{ttl := TTL}}) ->
     genlib_rational:round(genlib_rational:mul(Ratio, genlib_rational:new(TTL))).
 
 try_reset_timer(St0 = #{timer := TimerRef}) ->
-    St = case erlang:cancel_timer(TimerRef) of
-        false ->
-            ok = flush_timer(TimerRef),
-            maps:remove(timer, St0);
-        _Time ->
-            St0
-    end,
-    _ = beat({{timer, TimerRef}, reset}, St),
-    St;
+    ok = consuela_timer:reset(TimerRef),
+    _ = beat({{timer, TimerRef}, reset}, St0),
+    St1 = maps:remove(timer, St0),
+    St1;
 try_reset_timer(St) ->
     St.
-
-flush_timer(TimerRef) ->
-    receive {timeout, TimerRef, _} ->
-        ok
-    after 0 ->
-        ok
-    end.
 
 %%
 
