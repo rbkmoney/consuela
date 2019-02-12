@@ -19,6 +19,7 @@
     pulse   := {module(), _PulseOpts}
 }.
 
+-export_type([url/0]).
 -export_type([datacenter/0]).
 -export_type([token/0]).
 -export_type([t/0]).
@@ -54,6 +55,8 @@
     },
     pulse          => {module(), _PulseOpts}
 }.
+
+-export_type([opts/0]).
 
 -spec new(url(), opts()) ->
     t().

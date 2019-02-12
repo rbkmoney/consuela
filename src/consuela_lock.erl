@@ -5,7 +5,7 @@
 
 %%
 
--type namespace()   :: binary().
+-type namespace()   :: atom().
 -type id()          :: {namespace(), term()}.
 -type value()       :: term().
 -type index()       :: integer().
@@ -107,7 +107,10 @@ get(ID, Consistency, Client) ->
 %%
 
 encode_id({NS, Name}) ->
-    [NS, $/, encode_name(Name)].
+    [encode_namespace(NS), $/, encode_name(Name)].
+
+encode_namespace(V) ->
+    cow_uri:urlencode(erlang:atom_to_binary(V, latin1)).
 
 encode_consistency(default) ->
     [];

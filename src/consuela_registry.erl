@@ -80,6 +80,9 @@
     pulse => {module(), _PulseOpts}
 }.
 
+-export_type([namespace/0]).
+-export_type([opts/0]).
+
 -spec start_link(namespace(), consuela_session:t(), consuela_client:t(), opts()) ->
     {ok, pid()}.
 

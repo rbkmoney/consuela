@@ -55,6 +55,8 @@
     pulse    => {module(), _PulseOpts}
 }.
 
+-export_type([opts/0]).
+
 -spec start_link(session(), consuela_client:t(), opts()) ->
     {ok, pid()}.
 
