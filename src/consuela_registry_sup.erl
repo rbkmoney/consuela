@@ -5,7 +5,28 @@
 
 %%
 
--export([start_link/5]).
+-type opts() :: #{
+    nodename  := consuela_session:nodename(),
+    namespace := consuela_registry:namespace(),
+    consul    => consul_opts(),
+    session   => session_opts(),
+    keeper    => consuela_session_keeper:opts(), % #{} by default
+    registry  => consuela_registry:opts()        % #{} by default
+}.
+
+-type consul_opts() :: #{
+    url  => consuela_client:url(), % <<"http://{nodename}:8500">> by default
+    opts => consuela_client:opts() % #{} by default
+}.
+
+-type session_opts() :: #{
+    name => consuela_session:name(), % '{namespace}' by default
+    ttl  => consuela_session:ttl()   % 30 by default
+}.
+
+-export_type([opts/0]).
+
+-export([start_link/1]).
 
 %% Supervisor
 
@@ -14,29 +35,49 @@
 
 %%
 
--export_type([session_opts/0]).
-
--type session_opts() :: #{
-    name := consuela_session:name(),
-    node := consuela_session:nodename(),
-    ttl  := consuela_session:ttl()
-}.
-
--spec start_link(
-    consuela_registry:namespace(),
-    consuela_client:t(),
-    session_opts(),
-    consuela_session_keeper:opts(),
-    consuela_registry:opts()
-) ->
+-spec start_link(opts()) ->
     {ok, pid()} | {error, _Reason}.
 
-start_link(Namespace, Client, SessionOpts, KeeperOpts, RegistryOpts) ->
+start_link(Opts) ->
+    Nodename     = maps:get(nodename, Opts),
+    Namespace    = maps:get(namespace, Opts),
+    Client       = mk_consul_client(Nodename, maps:get(consul, Opts, #{})),
+    SessionOpts  = mk_session_params(Namespace, Nodename, maps:get(session, Opts, #{})),
+    KeeperOpts   = maps:get(keeper, Opts, #{}),
+    RegistryOpts = maps:get(registry, Opts, #{}),
     supervisor:start_link(
         {local, Namespace},
         ?MODULE,
         {Namespace, Client, SessionOpts, KeeperOpts, RegistryOpts}
     ).
+
+-spec mk_consul_client(inet:hostname(), consul_opts()) ->
+    consuela_client:t().
+
+mk_consul_client(Nodename, Opts) ->
+    Url = mk_consul_client_url(Nodename, maps:get(url, Opts, undefined)),
+    consuela_client:new(Url, Opts).
+
+mk_consul_client_url(_Nodename, Url) when Url /= undefined ->
+    Url;
+mk_consul_client_url(Nodename, undefined) ->
+    genlib:format("http://~s:8500", [Nodename]).
+
+-type session_params() :: #{
+    name := consuela_session:name(),
+    node := consuela_session:nodename(),
+    ttl  := consuela_session:ttl()
+}.
+
+-spec mk_session_params(consuela_registry:namespace(), consuela_session:nodename(), session_opts()) ->
+    session_params().
+
+mk_session_params(Namespace, Nodename, Opts) ->
+    #{
+        name => maps:get(name, Opts, Namespace),
+        node => Nodename,
+        ttl  => maps:get(ttl, Opts, 30)
+    }.
 
 %%
 
@@ -45,7 +86,7 @@ start_link(Namespace, Client, SessionOpts, KeeperOpts, RegistryOpts) ->
         Opts :: {
             consuela_registry:namespace(),
             consuela_client:t(),
-            session_opts(),
+            session_params(),
             consuela_session_keeper:opts(),
             consuela_registry:opts()
         }.
