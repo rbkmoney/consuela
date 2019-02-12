@@ -56,7 +56,7 @@ start_link(Opts) ->
 
 mk_consul_client(Nodename, Opts) ->
     Url = mk_consul_client_url(Nodename, maps:get(url, Opts, undefined)),
-    consuela_client:new(Url, Opts).
+    consuela_client:new(Url, maps:get(opts, Opts, #{})).
 
 mk_consul_client_url(_Nodename, Url) when Url /= undefined ->
     Url;
@@ -74,7 +74,7 @@ mk_consul_client_url(Nodename, undefined) ->
 
 mk_session_params(Namespace, Nodename, Opts) ->
     #{
-        name => maps:get(name, Opts, Namespace),
+        name => maps:get(name, Opts, erlang:atom_to_binary(Namespace, latin1)),
         node => Nodename,
         ttl  => maps:get(ttl, Opts, 20)
     }.
