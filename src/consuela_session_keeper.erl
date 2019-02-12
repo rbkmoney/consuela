@@ -94,7 +94,7 @@ init({Session, Client, Opts}) ->
             session  => Session,
             deadline => compute_deadline(Session),
             client   => Client,
-            interval => {1, 3}, % third of a TTL by default
+            interval => {1, 2}, % half of a TTL by default
             pulse    => {?MODULE, []}
         },
         Opts

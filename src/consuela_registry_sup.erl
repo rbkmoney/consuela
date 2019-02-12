@@ -21,7 +21,7 @@
 
 -type session_opts() :: #{
     name => consuela_session:name(), % '{namespace}' by default
-    ttl  => consuela_session:ttl()   % 30 by default
+    ttl  => consuela_session:ttl()   % 20 by default
 }.
 
 -export_type([opts/0]).
@@ -76,7 +76,7 @@ mk_session_params(Namespace, Nodename, Opts) ->
     #{
         name => maps:get(name, Opts, Namespace),
         node => Nodename,
-        ttl  => maps:get(ttl, Opts, 30)
+        ttl  => maps:get(ttl, Opts, 20)
     }.
 
 %%
