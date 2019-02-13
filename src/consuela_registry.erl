@@ -3,6 +3,13 @@
 %%%
 %%% NOTES
 %%%
+%%% In order to register a name exactly once over whole cluster we should acquire a lock keyed by that name
+%%% under this node's session. But in order to denounce a registration we should _delete_ a lock not just
+%%% release it despite the fact that we pay for it with extra Consul roundtrip (not with extra consensus round
+%%% though fortunately). This is because we strive to keep working set of the Consul KV store _as minimal as
+%%% possible_. Whether it's the objective worth striving to is unclear yet, we should probably gather some
+%%% evidence and review it.
+%%%
 %%% We must treat literally _any_ unexpected error we receive as an evidence of _unknowness_ in the sense
 %%% that we do not know for sure what state there is on the remote side (Consul, specifically), which we must
 %%% reconcile eventually. There are few error classes which do not obviously produce _unknowness_, HTTP
