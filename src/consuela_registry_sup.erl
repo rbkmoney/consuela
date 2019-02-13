@@ -26,7 +26,7 @@
 
 -export_type([opts/0]).
 
--export([start_link/1]).
+-export([start_link/2]).
 
 %% Supervisor
 
@@ -35,10 +35,10 @@
 
 %%
 
--spec start_link(opts()) ->
+-spec start_link(consuela_registry:ref(), opts()) ->
     {ok, pid()} | {error, _Reason}.
 
-start_link(Opts) ->
+start_link(Ref, Opts) ->
     Nodename     = maps:get(nodename, Opts),
     Namespace    = maps:get(namespace, Opts),
     Client       = mk_consul_client(Nodename, maps:get(consul, Opts, #{})),
@@ -46,9 +46,8 @@ start_link(Opts) ->
     KeeperOpts   = maps:get(keeper, Opts, #{}),
     RegistryOpts = maps:get(registry, Opts, #{}),
     supervisor:start_link(
-        {local, Namespace},
         ?MODULE,
-        {Namespace, Client, SessionOpts, KeeperOpts, RegistryOpts}
+        {Ref, Namespace, Client, SessionOpts, KeeperOpts, RegistryOpts}
     ).
 
 -spec mk_consul_client(inet:hostname(), consul_opts()) ->
@@ -74,7 +73,7 @@ mk_consul_client_url(Nodename, undefined) ->
 
 mk_session_params(Namespace, Nodename, Opts) ->
     #{
-        name => maps:get(name, Opts, erlang:atom_to_binary(Namespace, latin1)),
+        name => maps:get(name, Opts, Namespace),
         node => Nodename,
         ttl  => maps:get(ttl, Opts, 20)
     }.
@@ -84,6 +83,7 @@ mk_session_params(Namespace, Nodename, Opts) ->
 -spec init(Opts) ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}} when
         Opts :: {
+            consuela_registry:ref(),
             consuela_registry:namespace(),
             consuela_client:t(),
             session_params(),
@@ -91,21 +91,23 @@ mk_session_params(Namespace, Nodename, Opts) ->
             consuela_registry:opts()
         }.
 
-init({Namespace, Client, SessionOpts, KeeperOpts, RegistryOpts}) ->
+init({Ref, Namespace, Client, SessionOpts, KeeperOpts, RegistryOpts}) ->
     Session = mk_session(SessionOpts, Client),
     {ok, {
         #{strategy => one_for_all, intensity => 0, period => 1},
         [
             #{
-                id    => keeper,
+                id    => {Ref, keeper},
                 start => {consuela_session_keeper, start_link, [Session, Client, KeeperOpts]}
             },
             #{
-                id    => registry,
-                start => {consuela_registry, start_link, [Namespace, Session, Client, RegistryOpts]}
+                id    => {Ref, registry},
+                start => {consuela_registry, start_link, [Ref, Namespace, Session, Client, RegistryOpts]}
             }
         ]
     }}.
 
 mk_session(#{name := Name, node := Node, ttl := TTL}, Client) ->
-    consuela_session:create(Name, Node, TTL, delete, Client).
+    {ok, SessionID} = consuela_session:create(Name, Node, TTL, delete, Client),
+    {ok, Session} = consuela_session:get(SessionID, Client),
+    Session.

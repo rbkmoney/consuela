@@ -24,11 +24,11 @@
 
 -type name() :: term().
 
--export([start_link/4]).
+-export([start_link/5]).
 
--export([register/2]).
--export([unregister/2]).
--export([lookup/1]).
+-export([register/3]).
+-export([unregister/3]).
+-export([lookup/2]).
 
 -export_type([name/0]).
 
@@ -74,58 +74,58 @@
 -define(REGISTRATION_ETC       , 100).  % TODO too short?
 -define(DANGLING_RETRY_TIMEOUT , 1000). % TODO put into options
 
+-type ref()       :: atom().
 -type namespace() :: consuela_lock:namespace().
 
 -type opts() :: #{
     pulse => {module(), _PulseOpts}
 }.
 
+-export_type([ref/0]).
 -export_type([namespace/0]).
 -export_type([opts/0]).
 
--spec start_link(namespace(), consuela_session:t(), consuela_client:t(), opts()) ->
+-spec start_link(ref(), namespace(), consuela_session:t(), consuela_client:t(), opts()) ->
     {ok, pid()}.
 
-start_link(Namespace, Session, Client, Opts) ->
-    % Registering as a singleton on the node as it's the only way for a process to work like a process
-    % registry from the point of view of OTP.
-    gen_server:start_link({local, ?MODULE}, ?MODULE, {Namespace, Session, Client, Opts}, []).
+start_link(Ref, Namespace, Session, Client, Opts) ->
+    gen_server:start_link({local, Ref}, ?MODULE, {Ref, Namespace, Session, Client, Opts}, []).
 
--spec register(name(), pid()) ->
+-spec register(ref(), name(), pid()) ->
     ok | {error, exists}.
 
-register(Name, Pid) when is_pid(Pid) ->
-    handle_result(deadline_call({register, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT)).
+register(Ref, Name, Pid) when is_pid(Pid) ->
+    handle_result(deadline_call(Ref, {register, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT)).
 
--spec unregister(name(), pid()) ->
+-spec unregister(ref(), name(), pid()) ->
     ok | {error, notfound}.
 
-unregister(Name, Pid) when is_pid(Pid) ->
-    handle_result(deadline_call({unregister, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT)).
+unregister(Ref, Name, Pid) when is_pid(Pid) ->
+    handle_result(deadline_call(Ref, {unregister, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT)).
 
 handle_result({done, Done}) ->
     Done;
 handle_result({failed, Error}) ->
     erlang:error(Error).
 
--spec lookup(name()) ->
+-spec lookup(ref(), name()) ->
     {ok, pid()} | {error, notfound}.
 
-lookup(Name) ->
-    Namespace = get_cached_value(namespace),
-    Client = get_cached_value(client),
-    lookup(Namespace, Name, Client).
+lookup(Ref, Name) ->
+    Namespace = get_cached_value(namespace, Ref),
+    Client = get_cached_value(client, Ref),
+    lookup(Ref, Namespace, Name, Client).
 
 %%
 
 -type etc()      :: pos_integer().
 -type deadline() :: integer() | infinity.
 
--spec deadline_call(_Call, etc(), timeout()) ->
+-spec deadline_call(ref(), _Call, etc(), timeout()) ->
     _Result.
 
-deadline_call(Call, ETC, Timeout) when is_integer(ETC), ETC > 0, Timeout > ETC ->
-    gen_server:call(?MODULE, {deadline_call, compute_call_deadline(ETC, Timeout), Call}, Timeout).
+deadline_call(Ref, Call, ETC, Timeout) when is_integer(ETC), ETC > 0, Timeout > ETC ->
+    gen_server:call(Ref, {deadline_call, compute_call_deadline(ETC, Timeout), Call}, Timeout).
 
 compute_call_deadline(ETC, Timeout) when is_integer(Timeout) ->
     get_now() + Timeout - ETC.
@@ -151,12 +151,12 @@ get_now() ->
 
 -type from() :: {pid(), reference()}.
 
--spec init({namespace(), consuela_session:t(), consuela_client:t(), opts()}) ->
+-spec init({ref(), namespace(), consuela_session:t(), consuela_client:t(), opts()}) ->
     {ok, st()}.
 
-init({Namespace, Session, Client, Opts}) ->
-    Store = create_local_store(),
-    Cache = create_cache(),
+init({Ref, Namespace, Session, Client, Opts}) ->
+    Store = create_local_store(Ref),
+    Cache = create_cache(Ref),
     St = maps:fold(
         fun
             (pulse, {Module, _} = V, St) when is_atom(Module) ->
@@ -174,8 +174,8 @@ init({Namespace, Session, Client, Opts}) ->
         },
         Opts
     ),
-    ok = cache_value(namespace, Namespace),
-    ok = cache_value(client, Client),
+    ok = cache_value(namespace, Namespace, St),
+    ok = cache_value(client, Client, St),
     {ok, St}.
 
 -type call() ::
@@ -251,32 +251,32 @@ handle_activity(Action, Name, Pid, St0) ->
     _ = beat({Subject, started}, St0),
     {Result, St1} = case Action of
         register ->
-            register(Name, Pid, St0);
+            handle_register(Name, Pid, St0);
         unregister ->
-            unregister(Name, Pid, St0)
+            handle_unregister(Name, Pid, St0)
     end,
     _ = beat({Subject, Result}, St1),
     {Result, St1}.
 
-register(Name, Pid, St) ->
-    case lookup_local_store(Name) of
+handle_register(Name, Pid, St) ->
+    case lookup_local_store(Name, St) of
         {ok, Pid} ->
             % If it's already registered locally do nothing
             {{done, ok}, St};
         {error, notfound} ->
             % If it's not there time to go global
-            register_global(Name, Pid, St);
+            handle_register_global(Name, Pid, St);
         {ok, _} ->
             % If the name already taken locally error out
             {{done, {error, exists}}, St}
     end.
 
-register_global(Name, Pid, St0 = #{session := #{id := Sid}, client := Client}) ->
+handle_register_global(Name, Pid, St0 = #{session := #{id := Sid}, client := Client}) ->
     ID = mk_lock_id(Name, St0),
     try consuela_lock:hold(ID, Pid, Sid, Client) of
         ok ->
             % Store registration locally and monitor it
-            ok = store_local(Name, Pid),
+            ok = store_local(Name, Pid, St0),
             St1 = monitor_name(Name, Pid, St0),
             {{done, ok}, try_start_dangling_timer(St1)};
         {error, failed} ->
@@ -292,11 +292,11 @@ register_global(Name, Pid, St0 = #{session := #{id := Sid}, client := Client}) -
             {{failed, {error, Reason}}, St1}
     end.
 
-unregister(Name, Pid, St) ->
-    case lookup_local_store(Name) of
+handle_unregister(Name, Pid, St) ->
+    case lookup_local_store(Name, St) of
         {ok, Pid} ->
             % Found it, need to go global then
-            unregister_global(Name, Pid, St);
+            handle_unregister_global(Name, Pid, St);
         {ok, _} ->
             % There is another process with this name
             {{done, {error, notfound}}, St};
@@ -305,9 +305,9 @@ unregister(Name, Pid, St) ->
             {{done, {error, notfound}}, St}
     end.
 
-unregister_global(Name, Pid, St0) ->
+handle_unregister_global(Name, Pid, St0) ->
     {Result, St1} = ensure_delete_lock(Name, Pid, St0),
-    ok = remove_local(Name),
+    ok = remove_local(Name, St1),
     St2 = demonitor_name(Name, St1),
     {Result, St2}.
 
@@ -335,9 +335,9 @@ ensure_delete_lock(Name, Pid, St0 = #{session := Session, client := Client}) ->
 mk_lock_id(Name, #{namespace := Namespace}) ->
     {Namespace, Name}.
 
-lookup(Name, Namespace, Client) ->
+lookup(Ref, Namespace, Name, Client) ->
     % Doing local lookup first
-    case lookup_local_store(Name) of
+    case lookup_local_store(Name, Ref) of
         {ok, Pid} ->
             {ok, Pid};
         {error, notfound} ->
@@ -422,21 +422,28 @@ handle_down(MRef, Pid, St = #{monitors := Monitors}) ->
 
 %%
 
--define(STORE, '$consuela_registry_store').
+mk_store_tid(Ref) ->
+    RefBin = erlang:atom_to_binary(Ref, latin1),
+    erlang:binary_to_atom(<<"$consuela_registry_store/", RefBin/binary>>, latin1).
 
-create_local_store() ->
-    ets:new(?STORE, [protected, named_table, {read_concurrency, true}]).
+create_local_store(Ref) ->
+    ets:new(mk_store_tid(Ref), [protected, named_table, {read_concurrency, true}]).
 
-store_local(Name, Pid) ->
-    true = ets:insert_new(?STORE, [{Name, Pid}]),
+store_local(Name, Pid, #{store := Tid}) ->
+    true = ets:insert_new(Tid, [{Name, Pid}]),
     ok.
 
-remove_local(Name) ->
-    true = ets:delete(?STORE, Name),
+remove_local(Name, #{store := Tid}) ->
+    true = ets:delete(Tid, Name),
     ok.
 
-lookup_local_store(Name) ->
-    case ets:lookup(?STORE, Name) of
+lookup_local_store(Name, #{store := Tid}) ->
+    do_lookup(Name, Tid);
+lookup_local_store(Name, Ref) ->
+    do_lookup(Name, mk_store_tid(Ref)).
+
+do_lookup(Name, Tid) ->
+    case ets:lookup(Tid, Name) of
         [{Name, Pid}] ->
             {ok, Pid};
         [] ->
@@ -445,17 +452,19 @@ lookup_local_store(Name) ->
 
 %%
 
--define(CACHE, '$consuela_registry_cache').
+mk_cache_tid(Ref) ->
+    RefBin = erlang:atom_to_binary(Ref, latin1),
+    erlang:binary_to_atom(<<"$consuela_registry_cache/", RefBin/binary>>, latin1).
 
-create_cache() ->
-    ets:new(?CACHE, [protected, named_table, {read_concurrency, true}]).
+create_cache(Ref) ->
+    ets:new(mk_cache_tid(Ref), [protected, named_table, {read_concurrency, true}]).
 
-cache_value(Name, Value) ->
-    true = ets:insert(?CACHE, [{Name, Value}]),
+cache_value(Name, Value, #{cache := Tid}) ->
+    true = ets:insert(Tid, [{Name, Value}]),
     ok.
 
-get_cached_value(Name) ->
-    ets:lookup_element(?CACHE, Name, 2).
+get_cached_value(Name, Ref) ->
+    ets:lookup_element(mk_cache_tid(Ref), Name, 2).
 
 %%
 

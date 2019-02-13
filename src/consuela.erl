@@ -23,7 +23,7 @@
     pid() | undefined.
 
 register_name(Name, Pid) ->
-    case consuela_registry:register(Name, Pid) of
+    case consuela_registry:register(consuela, Name, Pid) of
         ok ->
             yes;
         {error, exists} ->
@@ -31,11 +31,11 @@ register_name(Name, Pid) ->
     end.
 
 unregister_name(Name) ->
-    ok = consuela_registry:unregister(Name, self()),
+    ok = consuela_registry:unregister(consuela, Name, self()),
     ok.
 
 whereis_name(Name) ->
-    case consuela_registry:lookup(Name) of
+    case consuela_registry:lookup(consuela, Name) of
         {ok, Pid} ->
             Pid;
         {error, notfound} ->

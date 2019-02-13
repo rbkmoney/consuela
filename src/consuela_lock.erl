@@ -5,7 +5,7 @@
 
 %%
 
--type namespace()   :: atom().
+-type namespace()   :: binary().
 -type id()          :: {namespace(), term()}.
 -type value()       :: term().
 -type index()       :: integer().
@@ -110,7 +110,7 @@ encode_id({NS, Name}) ->
     [encode_namespace(NS), $/, encode_name(Name)].
 
 encode_namespace(V) ->
-    cow_uri:urlencode(erlang:atom_to_binary(V, latin1)).
+    cow_uri:urlencode(V).
 
 encode_consistency(default) ->
     [];
