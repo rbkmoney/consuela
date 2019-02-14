@@ -27,6 +27,7 @@
 -export_type([opts/0]).
 
 -export([start_link/2]).
+-export([stop/1]).
 
 %% Supervisor
 
@@ -77,6 +78,12 @@ mk_session_params(Namespace, Nodename, Opts) ->
         node => Nodename,
         ttl  => maps:get(ttl, Opts, 20)
     }.
+
+-spec stop(pid()) ->
+    ok.
+
+stop(Pid) ->
+    proc_lib:stop(Pid).
 
 %%
 

@@ -318,15 +318,15 @@ handle_unregister_global(Name, Pid, St0) ->
     St2 = demonitor_name(Name, St1),
     {Result, St2}.
 
-ensure_delete_lock(Name, Pid, St0 = #{session := Session, client := Client}) ->
+ensure_delete_lock(Name, Pid, St0 = #{session := #{id := SessionID}, client := Client}) ->
     ID = mk_lock_id(Name, St0),
     try
-        {Result, St1} = case consuela_lock:get(ID, default, Client) of
-            {ok, Lock = #{value := Pid, session := Session}} ->
+        {Result, St1} = case consuela_lock:get(ID, Client) of
+            {ok, Lock = #{value := Pid, session := SessionID}} ->
                 % Looks like the lock is still ours
                 ok = consuela_lock:delete(Lock, Client),
                 {{done, ok}, St0};
-            {ok, #{session := AnotherSession}} when Session /= AnotherSession ->
+            {ok, #{session := AnotherID}} when SessionID /= AnotherID ->
                 % Looks like someone else is quick enough to hold it already
                 {{done, ok}, St0};
             {error, notfound} ->
@@ -350,11 +350,11 @@ lookup(Ref, Namespace, Name, Client) ->
         {error, notfound} ->
             % TODO
             % Allow to tune consistency through `start_link`'s opts?
-            lookup_global(Name, stale, Namespace, Client)
+            lookup_global(Name, Namespace, Client)
     end.
 
-lookup_global(Name, Consistency, Namespace, Client) ->
-    case consuela_lock:get({Namespace, Name}, Consistency, Client) of
+lookup_global(Name, Namespace, Client) ->
+    case consuela_lock:get({Namespace, Name}, Client) of
         {ok, #{value := Pid, session := _}} when is_pid(Pid) ->
             % The lock is still held by some session
             {ok, Pid};
@@ -425,7 +425,7 @@ demonitor_name(Name, St = #{monitors := Monitors}) ->
 
 handle_down(MRef, Pid, St = #{monitors := Monitors}) ->
     #{MRef := {Name, Pid}} = Monitors,
-    unregister(Name, Pid, St).
+    handle_activity(unregister, Name, Pid, St).
 
 %%
 
