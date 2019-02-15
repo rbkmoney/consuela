@@ -25,7 +25,7 @@ xref: submodules
 	$(REBAR) xref
 
 lint:
-	elvis rock
+	$(REBAR) lint
 
 dialyze: submodules
 	$(REBAR) dialyzer
