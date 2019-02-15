@@ -1,4 +1,6 @@
-version: '3.7'
+#!/bin/bash
+cat <<EOF
+version: '3.5'
 
 services:
   consul1: &consul-server
@@ -35,16 +37,18 @@ services:
       agent -server -bootstrap-expect 3 -ui -client 0.0.0.0
 
   consuela:
-    image: erlang:21
+    image: ${BUILD_IMAGE}
     networks:
       - consul
     volumes:
       - .:/opt/consuela
+      - $HOME/.cache:/home/$UNAME/.cache
     working_dir:
       /opt/consuela
-    init: true
     command:
-      epmd
+      /sbin/init
 
 networks:
   consul:
+
+EOF

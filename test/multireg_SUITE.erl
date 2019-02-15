@@ -57,6 +57,7 @@ groups() ->
 
 init_per_suite(C) ->
     Apps = ct_helper:ensure_app_loaded(consuela),
+    ok = ct_consul:await_ready(),
     [{suite_apps, Apps} | C].
 
 end_per_suite(C) ->

@@ -54,11 +54,13 @@ all() ->
     _.
 
 init_per_suite(C) ->
-    Apps = genlib_app:start_application_with(consuela, [
+    Apps0 = ct_helper:ensure_app_loaded(consuela),
+    ok = ct_consul:await_ready(),
+    Apps1 = genlib_app:start_application_with(consuela, [
         {nodename  , "consul0"},
         {namespace , <<?MODULE_STRING>>}
     ]),
-    [{suite_apps, Apps} | C].
+    [{suite_apps, Apps0 ++ Apps1} | C].
 
 end_per_suite(C) ->
     genlib_app:test_application_stop(?config(suite_apps, C)).
