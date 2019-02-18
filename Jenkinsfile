@@ -7,7 +7,7 @@ def finalHook = {
   }
 }
 
-build('consuela', 'docker-host') {
+build('consuela', 'docker-host', finalHook) {
   checkoutRepo()
   loadBuildUtils('build-utils')
 
