@@ -1,10 +1,16 @@
 #!/bin/bash
+
+# Latest among allowed in our production environment as of [Tue 19 Feb 2019 19:27:53 MSK]
+# (https://github.com/rbkmoney/salt-main/blob/fb1a59cd/classes/app/consul/init.yml#L6)
+
+export CONSUL_VERSION="1.4.2"
+
 cat <<EOF
 version: '3.5'
 
 services:
   consul1: &consul-server
-    image: consul:latest
+    image: consul:${CONSUL_VERSION}
     networks:
       - consul
     hostname: consul1
