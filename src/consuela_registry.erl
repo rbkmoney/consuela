@@ -294,11 +294,11 @@ handle_register_global(Name, Pid, St0 = #{session := #{id := Sid}, client := Cli
     catch
         error:{failed, _} = Reason ->
             % Nothing to reconcile anyway
-            {{failed, {error, Reason}}, St0};
+            {{failed, Reason}, St0};
         error:{unknown, _} = Reason ->
             % Lock may be held from the Consul's point of view, need to ensure it will be deleted eventually
             St1 = enqueue_dangling_name(Name, Pid, St0),
-            {{failed, {error, Reason}}, St1}
+            {{failed, Reason}, St1}
     end.
 
 handle_unregister(Name, Pid, St) ->
@@ -338,7 +338,7 @@ ensure_delete_lock(Name, Pid, St0 = #{session := #{id := SessionID}, client := C
         {Result, try_start_dangling_timer(St1)}
     catch
         error:{Class, Reason} when Class == failed; Class == unknown ->
-            {{failed, {error, Reason}}, enqueue_dangling_name(Name, Pid, St0)}
+            {{failed, {Class, Reason}}, enqueue_dangling_name(Name, Pid, St0)}
     end.
 
 mk_lock_id(Name, #{namespace := Namespace}) ->
