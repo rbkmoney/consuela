@@ -173,16 +173,13 @@ destroy_session(St = #{session := #{id := ID}, client := Client}) ->
 compute_deadline(#{ttl := TTL}) ->
     get_timestamp() + TTL.
 
-get_timestamp() ->
-    erlang:monotonic_time(seconds).
-
 %%
 
 restart_timer(St) ->
     start_timer(try_reset_timer(St)).
 
 start_timer(St0) ->
-    Timeout = compute_timeout(St0),
+    Timeout = try_clamp_timeout(compute_timeout(St0), St0),
     TimerRef = consuela_timer:start(Timeout * 1000, renew),
     St = St0#{timer => TimerRef},
     _ = beat({{timer, TimerRef}, {started, Timeout}}, St),
@@ -193,6 +190,9 @@ compute_timeout(#{interval := Timeout}) when is_integer(Timeout) ->
 compute_timeout(#{interval := Ratio, session := #{ttl := TTL}}) ->
     genlib_rational:round(genlib_rational:mul(Ratio, genlib_rational:new(TTL))).
 
+try_clamp_timeout(Timeout, #{deadline := Deadline}) ->
+    erlang:min(Timeout, Deadline - get_timestamp()).
+
 try_reset_timer(St0 = #{timer := TimerRef}) ->
     ok = consuela_timer:reset(TimerRef),
     _ = beat({{timer, TimerRef}, reset}, St0),
@@ -200,6 +200,9 @@ try_reset_timer(St0 = #{timer := TimerRef}) ->
     St1;
 try_reset_timer(St) ->
     St.
+
+get_timestamp() ->
+    erlang:monotonic_time(seconds).
 
 %%
 
