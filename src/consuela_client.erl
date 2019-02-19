@@ -41,17 +41,16 @@
 
 %% api
 
--define(MAX_RESPONSE_SIZE, 65536).
-
 -type opts() :: #{
     datacenter     => datacenter(),
     acl            => token(),
     transport_opts => #{
-        pool            => _Name,
-        max_connections => non_neg_integer(),
-        connect_timeout => non_neg_integer(),
-        recv_timeout    => non_neg_integer(),
-        ssl_options     => [ssl:ssl_option()]
+        pool              => _Name,
+        max_connections   => non_neg_integer(),
+        max_response_size => pos_integer(),     % bytes
+        connect_timeout   => non_neg_integer(), % milliseconds
+        recv_timeout      => non_neg_integer(), % milliseconds
+        ssl_options       => [ssl:ssl_option()]
     },
     pulse          => {module(), _PulseOpts}
 }.
@@ -77,7 +76,7 @@ new(Url, Opts) ->
             url     => to_binary(Url),
             query   => [],
             headers => [],
-            opts    => [with_body, {max_body, ?MAX_RESPONSE_SIZE}],
+            opts    => [with_body],
             pulse   => {?MODULE, []}
         },
         Opts
@@ -87,20 +86,25 @@ mk_transport_opts(Opts, TransOpts0) ->
     maps:fold(
         fun
             (pool, V, TransOpts) ->
-                [{pool, V} | TransOpts];
+                set_opt(pool, V, TransOpts);
             (ssl_options, V, TransOpts) when is_list(V) ->
-                [{ssl_options, V} | TransOpts];
+                set_opt(ssl_options, V, TransOpts);
+            (max_response_size, V, TransOpts) when is_integer(V), V > 0 ->
+                set_opt(max_body, V, TransOpts);
             (Opt, V, TransOpts) when
                 Opt == max_connections;
                 Opt == connect_timeout;
                 Opt == recv_timeout,
                 is_integer(V), V > 0
             ->
-                [{Opt, V} | TransOpts]
+                set_opt(Opt, V, TransOpts)
         end,
-        TransOpts0,
+        set_opt(max_body, 65536, TransOpts0),
         Opts
     ).
+
+set_opt(Name, V, Opts) ->
+    lists:keystore(Name, 1, Opts, {Name, V}).
 
 %%
 
