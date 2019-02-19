@@ -1,5 +1,13 @@
 %%%
 %%% Registry supervisor
+%%%
+%%% NOTES
+%%%
+%%% Supervisor designed with an assumptions that we have no chance for failure. We must stop as soon as we
+%%% lose either session keeper (since then we have no right to progress) or registry (since we do not know
+%%% what state he was in). If we start consuela app as part of a production node, this leads to an expected
+%%% behaviour, which is: _as soon as we lose keeper or registry the node goes down_.
+%%%
 
 -module(consuela_registry_sup).
 
