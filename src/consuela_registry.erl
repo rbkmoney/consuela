@@ -379,10 +379,10 @@ try_start_dangling_timer(St) ->
     try_start_dangling_timer(0, St).
 
 try_start_dangling_timer(Timeout, St = #{dangling := {Queue, _}}) ->
-    case queue:len(Queue) of
-        N when N > 0 ->
+    case queue:is_empty(Queue) of
+        false ->
             start_dangling_timer(Timeout, try_reset_dangling_timer(St));
-        0 ->
+        true ->
             St
     end.
 
