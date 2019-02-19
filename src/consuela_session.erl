@@ -8,11 +8,12 @@
 -type id()       :: uuid().
 -type name()     :: binary().
 -type nodename() :: inet:hostname().
--type ttl()      :: non_neg_integer().
+-type ttl()      :: seconds().
 -type behavior() :: release | delete.
 -type indexes()  :: #{create | modify => integer()}.
 
 -type uuid()     :: binary().
+-type seconds()  :: non_neg_integer().
 
 -type t() :: #{
     id       := id(),
