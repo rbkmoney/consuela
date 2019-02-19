@@ -77,8 +77,10 @@
 
 %%
 
--define(REGISTRATION_TIMEOUT   , 1000). % TODO too short?
+%% ETC = Estimated Time to Completion
+
 -define(REGISTRATION_ETC       , 100).  % TODO too short?
+-define(REGISTRATION_TIMEOUT   , 1000). % TODO too short?
 -define(DANGLING_RETRY_TIMEOUT , 1000). % TODO put into options
 
 -type ref()       :: atom().
