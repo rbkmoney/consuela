@@ -202,7 +202,12 @@ try_reset_timer(St) ->
     St.
 
 get_timestamp() ->
-    erlang:monotonic_time(seconds).
+    % NOTE
+    % We assume here that Consul clocks used to keep track of session expiration timestamps are better aligned
+    % with OS system time than ERTS instance time. Nevertheless, Consul seems to use system monotonic clock
+    % readings to schedule session invalidations so beware of weird effects when both of those clock readings
+    % differ much.
+    os:system_time(second).
 
 %%
 
