@@ -162,7 +162,7 @@ reaper_dies_eventually(C) ->
     _ = ?assertReceive({reaper, {{timer, _}, {started, 400}}}),
     _ = ?assertReceive({reaper, {{timer, _}, fired}}),
     _ = ?assertReceive({reaper, {{zombie, {_, boi, Pid}}, {reaping, {failed, {unknown, _}}}}}),
-    _ = ?assertReceive({'EXIT', Sup, _Reason}),
+    _ = ?assertReceive({'EXIT', Sup, _}),
     _ = erlang:process_flag(trap_exit, Flag),
     ok.
 

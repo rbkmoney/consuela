@@ -81,7 +81,7 @@ nonexistent_gives_noproc(_C) ->
 start_stop_works(_C) ->
     St = {just, "some", <<"term">>},
     Ref = mk_ref(meself),
-    ?assertMatch({ok, _Pid}, gen_server:start(Ref, ?MODULE, St, [])),
+    ?assertMatch({ok, _}, gen_server:start(Ref, ?MODULE, St, [])),
     ?assertEqual(St, gen_server:call(Ref, state)),
     ?assertEqual(St, sys:get_state(Ref)),
     ?assertEqual(ok, gen_server:stop(Ref)),
