@@ -32,7 +32,7 @@
 -type beat() ::
     {{zombie, zombie()},
         enqueued |
-        reaped
+        {reaping, succeeded | {failed, _Reason}}
     } |
     {{timer, reference()},
         {started, timeout()} |
@@ -179,9 +179,10 @@ try_clean_queue(St0 = #{zombies := Zs, queue := Q0, registry := Registry}) ->
     case consuela_registry:try_unregister(Zombie, Registry) of
         {done, ok} ->
             St1 = St0#{queue := Q1, zombies := unmark_zombie(Zombie, Zs)},
-            _ = beat({{zombie, Zombie}, reaped}, St1),
+            _ = beat({{zombie, Zombie}, {reaping, succeeded}}, St1),
             try_force_timer(reset_retry_state(St1));
-        {failed, _} ->
+        {failed, Reason} ->
+            _ = beat({{zombie, Zombie}, {reaping, {failed, Reason}}}, St0),
             try_restart_timer(advance_retry_state(St0))
     end.
 
