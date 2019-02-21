@@ -111,7 +111,7 @@ init({Registry, Opts}) ->
             zombies        => #{},
             queue          => queue:new(),
             registry       => Registry,
-            retry_strategy => genlib_retry:linear(10 * 12, 5000), % every 5 seconds for at least 10 minutes
+            retry_strategy => genlib_retry:linear({max_total_timeout, 10 * 60 * 1000}, 5000),
             pulse          => {?MODULE, []}
         },
         Opts
