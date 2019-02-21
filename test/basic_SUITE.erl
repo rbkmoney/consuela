@@ -85,6 +85,7 @@ init_per_testcase(Name, C) ->
         namespace => genlib:to_binary(Name),
         consul    => #{opts => #{pulse => {?MODULE, {client, debug}}}},
         keeper    => #{pulse => {?MODULE, {keeper, info}}},
+        reaper    => #{pulse => {?MODULE, {reaper, info}}},
         registry  => #{pulse => {?MODULE, {registry, info}}}
     },
     {ok, Pid} = consuela_registry_sup:start_link(Name, Opts),
@@ -106,57 +107,57 @@ end_per_testcase(_Name, C) ->
 
 empty_lookup_notfound(C) ->
     Ref = ?config(registry, C),
-    ?assertEqual({error, notfound}, consuela_registry:lookup(Ref, me)).
+    ?assertEqual({error, notfound}, lookup(Ref, me)).
 
 empty_unregistration_notfound(C) ->
     Ref = ?config(registry, C),
-    ?assertEqual({error, notfound}, consuela_registry:unregister(Ref, me, self())).
+    ?assertEqual({error, notfound}, unregister(Ref, me, self())).
 
 registration_persists(C) ->
     Ref = ?config(registry, C),
-    _ = ?assertEqual(ok, consuela_registry:register(Ref, me, self())),
-    _ = ?assertEqual(ok, consuela_registry:register(Ref, me, self())),
-    _ = ?assertEqual({ok, self()}, consuela_registry:lookup(Ref, me)),
+    _ = ?assertEqual(ok, register(Ref, me, self())),
+    _ = ?assertEqual(ok, register(Ref, me, self())),
+    _ = ?assertEqual({ok, self()}, lookup(Ref, me)),
     ok.
 
 conflicting_registration_fails(C) ->
     Ref = ?config(registry, C),
     Pid1 = spawn_slacker(),
     Pid2 = spawn_slacker(),
-    _ = ?assertEqual(ok, consuela_registry:register(Ref, my_boy, Pid1)),
-    _ = ?assertEqual({error, exists}, consuela_registry:register(Ref, my_boy, Pid2)),
-    _ = ?assertEqual(ok, consuela_registry:register(Ref, my_boy, Pid1)),
+    _ = ?assertEqual(ok, register(Ref, my_boy, Pid1)),
+    _ = ?assertEqual({error, exists}, register(Ref, my_boy, Pid2)),
+    _ = ?assertEqual(ok, register(Ref, my_boy, Pid1)),
     ok.
 
 complex_process_name_ok(C) ->
     Ref = ?config(registry, C),
     Name = {some, [<<"complex">>, 36#NAME]},
-    _ = ?assertEqual(ok, consuela_registry:register(Ref, Name, self())),
-    _ = ?assertEqual({ok, self()}, consuela_registry:lookup(Ref, Name)),
+    _ = ?assertEqual(ok, register(Ref, Name, self())),
+    _ = ?assertEqual({ok, self()}, lookup(Ref, Name)),
     ok.
 
 registration_unregistration_succeeds(C) ->
     Ref = ?config(registry, C),
-    _ = ?assertEqual(ok, consuela_registry:register(Ref, me, self())),
-    _ = ?assertEqual({ok, self()}, consuela_registry:lookup(Ref, me)),
-    _ = ?assertEqual(ok, consuela_registry:unregister(Ref, me, self())),
-    _ = ?assertEqual({error, notfound}, consuela_registry:unregister(Ref, me, self())),
-    _ = ?assertEqual({error, notfound}, consuela_registry:lookup(Ref, me)),
+    _ = ?assertEqual(ok, register(Ref, me, self())),
+    _ = ?assertEqual({ok, self()}, lookup(Ref, me)),
+    _ = ?assertEqual(ok, unregister(Ref, me, self())),
+    _ = ?assertEqual({error, notfound}, unregister(Ref, me, self())),
+    _ = ?assertEqual({error, notfound}, lookup(Ref, me)),
     ok.
 
 conflicting_unregistration_fails(C) ->
     Ref = ?config(registry, C),
-    _ = ?assertEqual(ok, consuela_registry:register(Ref, me, self())),
-    _ = ?assertEqual({error, notfound}, consuela_registry:unregister(Ref, me, erlang:whereis(kernel_sup))),
+    _ = ?assertEqual(ok, register(Ref, me, self())),
+    _ = ?assertEqual({error, notfound}, unregister(Ref, me, erlang:whereis(kernel_sup))),
     ok.
 
 dead_registration_cleaned(C) ->
     Ref = ?config(registry, C),
     Pid = spawn_slacker(),
-    _ = ?assertEqual(ok, consuela_registry:register(Ref, my_boy, Pid)),
+    _ = ?assertEqual(ok, register(Ref, my_boy, Pid)),
     ok = stop_slacker(Pid),
-    _ = ct_helper:await({error, notfound}, fun () -> consuela_registry:lookup(Ref, my_boy) end),
-    _ = ?assertEqual({error, notfound}, consuela_registry:unregister(Ref, my_boy, Pid)),
+    _ = ct_helper:await({error, notfound}, fun () -> lookup(Ref, my_boy) end),
+    _ = ?assertEqual({error, notfound}, unregister(Ref, my_boy, Pid)),
     ok.
 
 spawn_slacker() ->
@@ -165,6 +166,15 @@ spawn_slacker() ->
 stop_slacker(Pid) ->
     ct_helper:stop_linked(Pid, shutdown).
 
+register(Ref, Name, Pid) ->
+    consuela_registry_server:register(Ref, Name, Pid).
+
+unregister(Ref, Name, Pid) ->
+    consuela_registry_server:unregister(Ref, Name, Pid).
+
+lookup(Ref, Name) ->
+    consuela_registry_server:lookup(Ref, Name).
+
 %%
 
 -type category() :: atom().
@@ -172,6 +182,7 @@ stop_slacker(Pid) ->
 -spec handle_beat
     (consuela_client:beat(), {client, category()}) -> ok;
     (consuela_session_keeper:beat(), {keeper, category()}) -> ok;
+    (consuela_zombie_reaper:beat(), {reaper, category()}) -> ok;
     (consuela_registry:beat(), {registry, category()}) -> ok
 .
 

@@ -143,13 +143,13 @@ decode_session(#{
     <<"ID">>          := ID,
     <<"Name">>        := Name,
     <<"Node">>        := Node,
-    <<"LockDelay">>   := _TODO,
     <<"Behavior">>    := Behavior,
     <<"TTL">>         := TTL,
     <<"CreateIndex">> := CreateIndex,
     <<"ModifyIndex">> := ModifyIndex
     % TODO
     % <<"Checks">>    := Checks,
+    % <<"LockDelay">> := LockDelay,
 }) ->
     #{
         id       => decode_id(ID),

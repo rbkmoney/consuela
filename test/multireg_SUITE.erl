@@ -69,6 +69,7 @@ init_per_testcase(Name, C) ->
         namespace => genlib:to_binary(Name),
         consul    => #{opts => #{pulse => {?MODULE, {client, debug}}}},
         keeper    => #{pulse => {?MODULE, {keeper, info}}},
+        reaper    => #{pulse => {?MODULE, {reaper, info}}},
         registry  => #{pulse => {?MODULE, {registry, info}}}
     },
     {RegRefs, RegSups} = lists:unzip(
@@ -94,8 +95,8 @@ end_per_testcase(_Name, C) ->
 single_registration_succeeds(C) ->
     RegRefs = ?config(registry_refs, C),
     Pid = self(),
-    Results = genlib_pmap:map(fun (Ref) -> consuela_registry:register(Ref, me, Pid) end, RegRefs),
-    _       = genlib_pmap:map(fun (Ref) -> consuela_registry:unregister(Ref, me, Pid) end, RegRefs),
+    Results = genlib_pmap:map(fun (Ref) -> consuela_registry_server:register(Ref, me, Pid) end, RegRefs),
+    _       = genlib_pmap:map(fun (Ref) -> consuela_registry_server:unregister(Ref, me, Pid) end, RegRefs),
     ?assertEqual(
         {[ok], [{error, exists} || _ <- lists:seq(1, ?config(n, C) - 1)]},
         lists:partition(
@@ -114,7 +115,8 @@ single_registration_succeeds(C) ->
 -spec handle_beat
     (consuela_client:beat(), {client, category()}) -> ok;
     (consuela_session_keeper:beat(), {keeper, category()}) -> ok;
-    (consuela_registry:beat(), {registry, category()}) -> ok
+    (consuela_zombie_reaper:beat(), {reaper, category()}) -> ok;
+    (consuela_registry_server:beat(), {registry, category()}) -> ok
 .
 
 handle_beat(Beat, {Producer, Category}) ->

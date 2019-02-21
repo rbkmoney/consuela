@@ -58,7 +58,11 @@ init_per_suite(C) ->
     ok = ct_consul:await_ready(),
     Apps1 = genlib_app:start_application_with(consuela, [
         {nodename  , "consul0"},
-        {namespace , <<?MODULE_STRING>>}
+        {namespace , <<?MODULE_STRING>>},
+        {consul    , #{opts => #{pulse => {?MODULE, {client, debug}}}}},
+        {keeper    , #{pulse => {?MODULE, {keeper, info}}}},
+        {reaper    , #{pulse => {?MODULE, {reaper, info}}}},
+        {registry  , #{pulse => {?MODULE, {registry, info}}}}
     ]),
     [{suite_apps, Apps0 ++ Apps1} | C].
 
@@ -144,6 +148,7 @@ code_change(_OldVsn, St, _Extra) ->
 -spec handle_beat
     (consuela_client:beat(), {client, category()}) -> ok;
     (consuela_session_keeper:beat(), {keeper, category()}) -> ok;
+    (consuela_zombie_reaper:beat(), {reaper, category()}) -> ok;
     (consuela_registry:beat(), {registry, category()}) -> ok
 .
 
