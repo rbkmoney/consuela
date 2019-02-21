@@ -145,7 +145,7 @@ handle_cast(Cast, St) ->
 
 handle_info({timeout, TimerRef, clean}, St = #{timer := TimerRef}) ->
     _ = beat({{timer, TimerRef}, fired}, St),
-    {noreply, try_clean_queue(St)};
+    {noreply, try_clean_queue(maps:remove(timer, St))};
 handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
     {noreply, St}.
@@ -170,9 +170,7 @@ handle_enqueue(Zombie = {_, Name, _}, St0 = #{zombies := Zs, queue := Q}) when n
         queue   := queue:in(Zombie, Q)
     },
     _ = beat({{zombie, Zombie}, enqueued}, St1),
-    % I guess that if we received a request to enqueue a zombie then Consul is unavailable, so it's better to
-    % reset the timer for later.
-    try_restart_timer(St1).
+    try_start_timer(St1).
 
 try_clean_queue(St0 = #{zombies := Zs, queue := Q0, registry := Registry}) ->
     {{value, Zombie}, Q1} = queue:out(Q0),
@@ -180,10 +178,10 @@ try_clean_queue(St0 = #{zombies := Zs, queue := Q0, registry := Registry}) ->
         {done, ok} ->
             St1 = St0#{queue := Q1, zombies := unmark_zombie(Zombie, Zs)},
             _ = beat({{zombie, Zombie}, {reaping, succeeded}}, St1),
-            try_force_timer(reset_retry_state(St1));
+            try_force_timer(St1);
         {failed, Reason} ->
             _ = beat({{zombie, Zombie}, {reaping, {failed, Reason}}}, St0),
-            try_restart_timer(advance_retry_state(St0))
+            start_timer(advance_retry_state(St0))
     end.
 
 mark_zombie({_Rid, Name, _Pid}, Zs) ->
@@ -192,20 +190,21 @@ mark_zombie({_Rid, Name, _Pid}, Zs) ->
 unmark_zombie({_Rid, Name, _Pid}, Zs) ->
     maps:remove(Name, Zs).
 
-try_restart_timer(St = #{retry_state := RetrySt}) ->
-    {wait, Timeout, _RetrySt} = genlib_retry:next_step(RetrySt),
-    try_restart_timer(Timeout, St).
-
 try_force_timer(St) ->
-    try_restart_timer(0, reset_retry_state(St)).
+    try_start_timer(0, try_reset_timer(reset_retry_state(St))).
 
-try_restart_timer(Timeout, St = #{queue := Queue}) ->
+try_start_timer(St) ->
+    try_start_timer(get_cooldown_timeout(St), St).
+
+try_start_timer(Timeout, St = #{queue := Queue}) when not is_map_key(timer, St) ->
     case queue:is_empty(Queue) of
         false ->
-            start_timer(Timeout, try_reset_timer(St));
+            start_timer(Timeout, St);
         true ->
             St
-    end.
+    end;
+try_start_timer(_Timeout, St = #{timer := _}) ->
+    St.
 
 try_reset_timer(St = #{timer := TimerRef}) when is_reference(TimerRef) ->
     ok = consuela_timer:reset(TimerRef),
@@ -214,10 +213,22 @@ try_reset_timer(St = #{timer := TimerRef}) when is_reference(TimerRef) ->
 try_reset_timer(St = #{}) ->
     St.
 
-start_timer(Timeout, St = #{}) when not is_map_key(timer, St) ->
-    TimerRef = consuela_timer:start(Timeout, clean),
-    _ = beat({{timer, TimerRef}, {started, Timeout}}, St),
-    St#{timer => TimerRef}.
+start_timer(St) ->
+    start_timer(get_cooldown_timeout(St), St).
+
+start_timer(Timeout, St = #{queue := Queue}) when not is_map_key(timer, St) ->
+    case queue:is_empty(Queue) of
+        false ->
+            TimerRef = consuela_timer:start(Timeout, clean),
+            _ = beat({{timer, TimerRef}, {started, Timeout}}, St),
+            St#{timer => TimerRef};
+        true ->
+            St
+    end.
+
+get_cooldown_timeout(#{retry_state := RetrySt}) ->
+    {wait, Timeout, _RetrySt} = genlib_retry:next_step(RetrySt),
+    Timeout.
 
 reset_retry_state(St = #{retry_strategy := Retry}) ->
     % TODO
