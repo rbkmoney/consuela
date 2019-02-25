@@ -3,32 +3,17 @@
 
 -module(consuela_sup).
 
-%%
+%% API
 
 -export([start_link/0]).
 
-%% Supervisor
-
--behaviour(supervisor).
--export([init/1]).
-
 %%
-
--define(SERVER, ?MODULE).
 
 -spec start_link() ->
     {ok, pid()} | {error, _Reason}.
 
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
-
-%%
-
--spec init([]) ->
-    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-
-init([]) ->
-    {ok, {
-        #{strategy => one_for_all, intensity => 0, period => 1},
-        []
-    }}.
+    % Registering as a singleton on the node as it's the only way for a process to work like a process
+    % registry from the point of view of OTP.
+    Opts = maps:from_list(application:get_all_env(consuela)),
+    consuela_registry_sup:start_link(consuela, Opts).
