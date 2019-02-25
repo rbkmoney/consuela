@@ -100,7 +100,7 @@ init_per_testcase(Name, C) ->
         }
     },
     {ok, Pid} = consuela_registry_sup:start_link(Name, Opts),
-    [{registry, Name}, {registry_sup, Pid}, {proxy, Proxy} | C].
+    [{registry, Name}, {registry_sup, Pid}, {proxy, Proxy}, {testcase, Name} | C].
 
 end_per_testcase(_Name, C) ->
     _ = (catch consuela_registry_sup:stop(?config(registry_sup, C))),
@@ -129,15 +129,14 @@ end)).
 
 zombie_reaping_succeeded(C) ->
     Ref = ?config(registry, C),
-    Proxy = ?config(proxy, C),
     Pid = spawn_slacker(),
     _ = ?assertEqual(ok, register(Ref, boi, Pid)),
-    _ = ?assertEqual({ok, pass}, ct_proxy:mode(Proxy, stop)),
+    ok = change_proxy_mode(pass, stop, C),
     _ = ?assertEqual({ok, Pid}, lookup(Ref, boi)),
     _ = ?assertEqual(ok, stop_slacker(Pid)),
     _ = ?assertReceive({reaper, {{zombie, {_, boi, Pid}}, enqueued}}),
     _ = ?assertReceive({reaper, {{timer, _}, {started, 100}}}),
-    _ = ?assertEqual({ok, stop}, ct_proxy:mode(Proxy, pass)),
+    ok = change_proxy_mode(stop, pass, C),
     _ = ?assertReceive({reaper, {{timer, _}, fired}}),
     _ = ?assertReceive({reaper, {{zombie, {_, boi, Pid}}, {reaping, succeeded}}}),
     _ = ?assertEqual({error, notfound}, lookup(Ref, boi)),
@@ -146,11 +145,10 @@ zombie_reaping_succeeded(C) ->
 reaper_dies_eventually(C) ->
     Ref = ?config(registry, C),
     Sup = ?config(registry_sup, C),
-    Proxy = ?config(proxy, C),
     Pid = spawn_slacker(),
     Flag = erlang:process_flag(trap_exit, true),
     _ = ?assertEqual(ok, register(Ref, boi, Pid)),
-    _ = ?assertEqual({ok, pass}, ct_proxy:mode(Proxy, stop)),
+    ok = change_proxy_mode(pass, stop, C),
     _ = ?assertEqual(ok, stop_slacker(Pid)),
     _ = ?assertReceive({reaper, {{zombie, {_, boi, Pid}}, enqueued}}),
     _ = ?assertReceive({reaper, {{timer, _}, {started, 100}}}),
@@ -169,18 +167,17 @@ reaper_dies_eventually(C) ->
 reaper_queue_drains_eventually(C) ->
     N = 20,
     Ref = ?config(registry, C),
-    Proxy = ?config(proxy, C),
     Slackers = [{I, spawn_slacker()} || I <- lists:seq(1, N)],
     _ = genlib_pmap:map(
         fun ({I, Pid}) -> ?assertEqual(ok, register(Ref, I, Pid)) end,
         Slackers
     ),
-    _ = ?assertEqual({ok, pass}, ct_proxy:mode(Proxy, stop)),
+    ok = change_proxy_mode(pass, stop, C),
     _ = [?assertEqual(ok, stop_slacker(Pid)) || {_, Pid} <- Slackers],
-    _ = timer:sleep(100),
-    _ = ?assertEqual({ok, stop}, ct_proxy:mode(Proxy, ignore)),
-    _ = timer:sleep(100),
-    _ = ?assertEqual({ok, ignore}, ct_proxy:mode(Proxy, pass)),
+    _ = timer:sleep(200),
+    ok = change_proxy_mode(stop, ignore, C),
+    _ = timer:sleep(1000),
+    ok = change_proxy_mode(ignore, pass, C),
     _ = [
         begin
             _ = ?assertReceive({reaper, {{zombie, {_, I, Pid}}, enqueued}}, N * 100),
@@ -194,7 +191,6 @@ reaper_queue_drains_eventually(C) ->
     ),
     ok.
 
-
 register(Ref, Name, Pid) ->
     consuela_registry_server:register(Ref, Name, Pid).
 
@@ -206,6 +202,12 @@ spawn_slacker() ->
 
 stop_slacker(Pid) ->
     ct_helper:stop_linked(Pid, shutdown).
+
+change_proxy_mode(ModeWas, Mode, C) ->
+    Proxy = ?config(proxy, C),
+    _ = ct:pal(debug, "[~p] setting proxy from '~p' to '~p'", [?config(testcase, C), ModeWas, Mode]),
+    _ = ?assertEqual({ok, ModeWas}, ct_proxy:mode(Proxy, Mode)),
+    ok.
 
 %%
 

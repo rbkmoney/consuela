@@ -15,7 +15,7 @@
 % TODO
 % -export([dequeue/3]) ?.
 
--export([poke/1]).
+-export([drain/1]).
 
 %% gen server
 
@@ -73,11 +73,11 @@ start_link(Registry, Opts) ->
 enqueue(Ref, Zombie) ->
     gen_server:cast(Ref, {enqueue, Zombie}).
 
--spec poke(ref()) ->
+-spec drain(ref()) ->
     ok.
 
-poke(Ref) ->
-    gen_server:cast(Ref, poke).
+drain(Ref) ->
+    gen_server:cast(Ref, drain).
 
 %%
 
@@ -89,6 +89,7 @@ poke(Ref) ->
     registry       := consuela_registry:t(),
     retry_strategy := genlib_retry:strategy(),
     retry_state    => genlib_retry:strategy(),
+    timeout        => timeout(),
     timer          => reference(),
     pulse          := {module(), _PulseOpts}
 }.
@@ -102,7 +103,6 @@ init({Registry, Opts}) ->
     St = maps:fold(
         fun
             (retry, V, St) ->
-                _ = genlib_retry:next_step(V), % just to validate that V is indeed a strategy
                 St#{retry_strategy => V};
             (pulse, {Module, _} = V, St) when is_atom(Module) ->
                 St#{pulse => V}
@@ -125,15 +125,15 @@ handle_call(Call, From, St) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
     {noreply, St}.
 
--type cast() :: {enqueue, zombie()} | poke.
+-type cast() :: {enqueue, zombie()} | drain.
 
 -spec handle_cast(cast(), st()) ->
     {noreply, st()}.
 
 handle_cast({enqueue, Zombie}, St) ->
     {noreply, handle_enqueue(Zombie, St)};
-handle_cast(poke, St) ->
-    {noreply, try_force_timer(St)};
+handle_cast(drain, St) ->
+    {noreply, try_force_timer(reset_retry_state(St))};
 handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
     {noreply, St}.
@@ -178,7 +178,7 @@ try_clean_queue(St0 = #{zombies := Zs, queue := Q0, registry := Registry}) ->
         {done, ok} ->
             St1 = St0#{queue := Q1, zombies := unmark_zombie(Zombie, Zs)},
             _ = beat({{zombie, Zombie}, {reaping, succeeded}}, St1),
-            try_force_timer(St1);
+            try_force_timer(reset_retry_state(St1));
         {failed, Reason} ->
             _ = beat({{zombie, Zombie}, {reaping, {failed, Reason}}}, St0),
             start_timer(advance_retry_state(St0))
@@ -191,10 +191,10 @@ unmark_zombie({_Rid, Name, _Pid}, Zs) ->
     maps:remove(Name, Zs).
 
 try_force_timer(St) ->
-    try_start_timer(0, try_reset_timer(reset_retry_state(St))).
+    try_start_timer(0, try_reset_timer(St)).
 
-try_start_timer(St) ->
-    try_start_timer(get_cooldown_timeout(St), St).
+try_start_timer(St = #{timeout := Timeout}) ->
+    try_start_timer(Timeout, St).
 
 try_start_timer(Timeout, St = #{queue := Queue}) when not is_map_key(timer, St) ->
     case queue:is_empty(Queue) of
@@ -213,33 +213,24 @@ try_reset_timer(St = #{timer := TimerRef}) when is_reference(TimerRef) ->
 try_reset_timer(St = #{}) ->
     St.
 
-start_timer(St) ->
-    start_timer(get_cooldown_timeout(St), St).
+start_timer(St = #{timeout := Timeout}) ->
+    start_timer(Timeout, St).
 
-start_timer(Timeout, St = #{queue := Queue}) when not is_map_key(timer, St) ->
-    case queue:is_empty(Queue) of
-        false ->
-            TimerRef = consuela_timer:start(Timeout, clean),
-            _ = beat({{timer, TimerRef}, {started, Timeout}}, St),
-            St#{timer => TimerRef};
-        true ->
-            St
-    end.
-
-get_cooldown_timeout(#{retry_state := RetrySt}) ->
-    {wait, Timeout, _RetrySt} = genlib_retry:next_step(RetrySt),
-    Timeout.
+start_timer(Timeout, St = #{}) when not is_map_key(timer, St) ->
+    TimerRef = consuela_timer:start(Timeout, clean),
+    _ = beat({{timer, TimerRef}, {started, Timeout}}, St),
+    St#{timer => TimerRef}.
 
 reset_retry_state(St = #{retry_strategy := Retry}) ->
     % TODO
     % Will not work well with timecapped strategies, we need to separate constructor from state.
-    St#{retry_state => Retry}.
+    advance_retry_state(St#{retry_state => Retry}).
 
 advance_retry_state(St = #{retry_state := RetrySt0}) ->
     case genlib_retry:next_step(RetrySt0) of
-        {wait, _Timeout, RetrySt1} ->
+        {wait, Timeout, RetrySt1} ->
             % We already slept that timeout earlier
-            St#{retry_state := RetrySt1};
+            St#{retry_state := RetrySt1, timeout => Timeout};
         finish ->
             % No reason to live anymore
             exit(retries_exhausted)

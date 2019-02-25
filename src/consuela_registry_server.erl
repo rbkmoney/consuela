@@ -271,7 +271,7 @@ handle_register_global(Name, Pid, St0 = #{registry := Registry}) ->
     Rid = erlang:unique_integer(),
     Reg = {Rid, Name, Pid},
     Result = consuela_registry:try_register(Reg, Registry),
-    ok = try_poke_reaper(Result, St0),
+    ok = try_drain_reaper(Result, St0),
     ok = try_enqueue_zombie(Result, register, Reg, St0),
     case Result of
         {done, ok} ->
@@ -301,15 +301,15 @@ handle_unregister(Name, Pid, St) ->
 
 handle_unregister_global(Reg, St0 = #{registry := Registry}) ->
     Result = consuela_registry:try_unregister(Reg, Registry),
-    ok = try_poke_reaper(Result, St0),
+    ok = try_drain_reaper(Result, St0),
     ok = try_enqueue_zombie(Result, unregister, Reg, St0),
     ok = remove_local(Reg, St0),
     St1 = demonitor_name(Reg, St0),
     {Result, St1}.
 
-try_poke_reaper({done, _}, #{reaper := ReaperRef}) ->
-    consuela_zombie_reaper:poke(ReaperRef);
-try_poke_reaper({failed, _}, _St) ->
+try_drain_reaper({done, _}, #{reaper := ReaperRef}) ->
+    consuela_zombie_reaper:drain(ReaperRef);
+try_drain_reaper({failed, _}, _St) ->
     ok.
 
 try_enqueue_zombie({done, _}, _Context, _Reg, _St) ->
