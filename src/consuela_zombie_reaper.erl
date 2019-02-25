@@ -229,7 +229,6 @@ reset_retry_state(St = #{retry_strategy := Retry}) ->
 advance_retry_state(St = #{retry_state := RetrySt0}) ->
     case genlib_retry:next_step(RetrySt0) of
         {wait, Timeout, RetrySt1} ->
-            % We already slept that timeout earlier
             St#{retry_state := RetrySt1, timeout => Timeout};
         finish ->
             % No reason to live anymore
