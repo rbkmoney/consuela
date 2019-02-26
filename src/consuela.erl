@@ -7,9 +7,19 @@
 
 -type name() :: consuela_registry:name().
 
+-export([all/0]).
+
 -export([register_name/2]).
 -export([unregister_name/1]).
 -export([whereis_name/1]).
+
+%%
+
+-spec all() ->
+    [{name(), pid()}].
+
+all() ->
+    consuela_registry_server:all(consuela).
 
 %%
 
