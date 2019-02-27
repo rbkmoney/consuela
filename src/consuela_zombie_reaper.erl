@@ -164,13 +164,18 @@ code_change(_Vsn, St, _Extra) ->
 
 %%
 
-handle_enqueue(Zombie = {_, Name, _}, St0 = #{zombies := Zs, queue := Q}) when not is_map_key(Name, Zs) ->
-    St1 = St0#{
-        zombies := mark_zombie(Zombie, Zs),
-        queue   := queue:in(Zombie, Q)
-    },
-    _ = beat({{zombie, Zombie}, enqueued}, St1),
-    try_start_timer(St1).
+handle_enqueue(Zombie = {_, Name, _}, St0 = #{zombies := Zs, queue := Q}) ->
+    case maps:is_key(Name, Zs) of
+        false ->
+            St1 = St0#{
+                zombies := mark_zombie(Zombie, Zs),
+                queue   := queue:in(Zombie, Q)
+            },
+            _ = beat({{zombie, Zombie}, enqueued}, St1),
+            try_start_timer(St1);
+        true ->
+            try_start_timer(St0)
+    end.
 
 try_clean_queue(St0 = #{zombies := Zs, queue := Q0, registry := Registry}) ->
     {{value, Zombie}, Q1} = queue:out(Q0),
@@ -196,15 +201,15 @@ try_force_timer(St) ->
 try_start_timer(St = #{timeout := Timeout}) ->
     try_start_timer(Timeout, St).
 
-try_start_timer(Timeout, St = #{queue := Queue}) when not is_map_key(timer, St) ->
+try_start_timer(_Timeout, St = #{timer := _}) ->
+    St;
+try_start_timer(Timeout, St = #{queue := Queue}) ->
     case queue:is_empty(Queue) of
         false ->
             start_timer(Timeout, St);
         true ->
             St
-    end;
-try_start_timer(_Timeout, St = #{timer := _}) ->
-    St.
+    end.
 
 try_reset_timer(St = #{timer := TimerRef}) when is_reference(TimerRef) ->
     ok = consuela_timer:reset(TimerRef),
@@ -216,7 +221,8 @@ try_reset_timer(St = #{}) ->
 start_timer(St = #{timeout := Timeout}) ->
     start_timer(Timeout, St).
 
-start_timer(Timeout, St = #{}) when not is_map_key(timer, St) ->
+start_timer(Timeout, St = #{}) ->
+    false = maps:is_key(timer, St),
     TimerRef = consuela_timer:start(Timeout, clean),
     _ = beat({{timer, TimerRef}, {started, Timeout}}, St),
     St#{timer => TimerRef}.
