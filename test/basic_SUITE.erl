@@ -25,6 +25,7 @@
 -export([registration_unregistration_succeeds/1]).
 -export([conflicting_unregistration_fails/1]).
 -export([dead_registration_cleaned/1]).
+-export([registrations_select_ok/1]).
 
 %% Pulse
 
@@ -53,7 +54,8 @@ groups() ->
             conflicting_registration_fails,
             registration_unregistration_succeeds,
             conflicting_unregistration_fails,
-            dead_registration_cleaned
+            dead_registration_cleaned,
+            registrations_select_ok
         ]}
     ].
 
@@ -104,6 +106,7 @@ end_per_testcase(_Name, C) ->
 -spec registration_unregistration_succeeds(config()) -> _.
 -spec conflicting_unregistration_fails(config())     -> _.
 -spec dead_registration_cleaned(config())            -> _.
+-spec registrations_select_ok(config())              -> _.
 
 empty_lookup_notfound(C) ->
     Ref = ?config(registry, C),
@@ -158,6 +161,16 @@ dead_registration_cleaned(C) ->
     ok = stop_slacker(Pid),
     _ = ct_helper:await({error, notfound}, fun () -> lookup(Ref, my_boy) end),
     _ = ?assertEqual({error, notfound}, unregister(Ref, my_boy, Pid)),
+    ok.
+
+registrations_select_ok(C) ->
+    N = 10,
+    Ref = ?config(registry, C),
+    Slackers = [{I, spawn_slacker()} || I <- lists:seq(1, N)],
+    _ = [?assertEqual(ok, register(Ref, I, Pid)) || {I, Pid} <- Slackers],
+    _ = ?assertEqual(Slackers, lists:sort(consuela_registry_server:all(Ref))),
+    _ = [?assertEqual(ok, unregister(Ref, I, Pid)) || {I, Pid} <- Slackers],
+    _ = [?assertEqual(ok, stop_slacker(Pid)) || {_, Pid} <- Slackers],
     ok.
 
 spawn_slacker() ->

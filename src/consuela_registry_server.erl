@@ -38,6 +38,8 @@
 -export([unregister/3]).
 -export([lookup/2]).
 
+-export([all/1]).
+
 -export_type([name/0]).
 
 %% gen server
@@ -114,8 +116,17 @@ handle_result({failed, Error}) ->
     {ok, pid()} | {error, notfound}.
 
 lookup(Ref, Name) ->
-    Reg = get_cached_value(registry, Ref),
-    lookup(Ref, Name, Reg).
+    Registry = get_cached_value(registry, Ref),
+    lookup(Ref, Name, Registry).
+
+%%
+
+-spec all(ref()) ->
+    [{name(), pid()}].
+
+all(Ref) ->
+    Tid = mk_store_tid(Ref),
+    ets:select(Tid, [{{'$1', '$2', '_'}, [], [{{'$1', '$2'}}]}]).
 
 %%
 
@@ -369,7 +380,7 @@ create_local_store(Ref) ->
     ets:new(mk_store_tid(Ref), [protected, named_table, {read_concurrency, true}]).
 
 store_local({Rid, Name, Pid}, #{store := Tid}) ->
-    true = ets:insert_new(Tid, [{Name, Rid, Pid}]),
+    true = ets:insert_new(Tid, [{Name, Pid, Rid}]),
     ok.
 
 remove_local({_Rid, Name, _Pid}, #{store := Tid}) ->
@@ -383,7 +394,7 @@ lookup_local_store(Name, Ref) ->
 
 do_lookup(Name, Tid) ->
     case ets:lookup(Tid, Name) of
-        [{Name, Rid, Pid}] ->
+        [{Name, Pid, Rid}] ->
             {ok, {Rid, Name, Pid}};
         [] ->
             {error, notfound}
