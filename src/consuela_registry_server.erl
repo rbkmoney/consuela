@@ -108,7 +108,7 @@ unregister(Ref, Name, Pid) when is_pid(Pid) ->
 handle_result({done, Done}) ->
     Done;
 handle_result({failed, Error}) ->
-    erlang:error(Error).
+    erlang:error({?MODULE, Error}).
 
 -spec lookup(ref(), name()) ->
     {ok, pid()} | {error, notfound}.
