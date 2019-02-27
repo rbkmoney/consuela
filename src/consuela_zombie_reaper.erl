@@ -7,7 +7,6 @@
 %% api
 
 -type registry() :: consuela_registry:t().
--type name()     :: consuela_registry:name().
 
 -export([start_link/2]).
 
@@ -84,7 +83,6 @@ drain(Ref) ->
 -type zombie() :: consuela_registry:reg().
 
 -type st() :: #{
-    zombies        := #{name() => _},
     queue          := queue:queue(zombie()),
     registry       := consuela_registry:t(),
     retry_strategy := genlib_retry:strategy(),
