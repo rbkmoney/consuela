@@ -108,7 +108,6 @@ init({Registry, Opts}) ->
                 St#{pulse => V}
         end,
         #{
-            zombies        => #{},
             queue          => queue:new(),
             registry       => Registry,
             retry_strategy => genlib_retry:linear({max_total_timeout, 10 * 60 * 1000}, 5000),
@@ -164,36 +163,22 @@ code_change(_Vsn, St, _Extra) ->
 
 %%
 
-handle_enqueue(Zombie = {_, Name, _}, St0 = #{zombies := Zs, queue := Q}) ->
-    case maps:is_key(Name, Zs) of
-        false ->
-            St1 = St0#{
-                zombies := mark_zombie(Zombie, Zs),
-                queue   := queue:in(Zombie, Q)
-            },
-            _ = beat({{zombie, Zombie}, enqueued}, St1),
-            try_start_timer(St1);
-        true ->
-            try_start_timer(St0)
-    end.
+handle_enqueue(Zombie, St0 = #{queue := Q}) ->
+    St1 = St0#{queue := queue:in(Zombie, Q)},
+    _ = beat({{zombie, Zombie}, enqueued}, St1),
+    try_start_timer(St1).
 
-try_clean_queue(St0 = #{zombies := Zs, queue := Q0, registry := Registry}) ->
+try_clean_queue(St0 = #{queue := Q0, registry := Registry}) ->
     {{value, Zombie}, Q1} = queue:out(Q0),
     case consuela_registry:try_unregister(Zombie, Registry) of
         {done, ok} ->
-            St1 = St0#{queue := Q1, zombies := unmark_zombie(Zombie, Zs)},
+            St1 = St0#{queue := Q1},
             _ = beat({{zombie, Zombie}, {reaping, succeeded}}, St1),
             try_force_timer(reset_retry_state(St1));
         {failed, Reason} ->
             _ = beat({{zombie, Zombie}, {reaping, {failed, Reason}}}, St0),
             start_timer(advance_retry_state(St0))
     end.
-
-mark_zombie({_Rid, Name, _Pid}, Zs) ->
-    Zs#{Name => []}.
-
-unmark_zombie({_Rid, Name, _Pid}, Zs) ->
-    maps:remove(Name, Zs).
 
 try_force_timer(St) ->
     try_start_timer(0, try_reset_timer(St)).
