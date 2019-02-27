@@ -221,12 +221,10 @@ beat(Beat, #{pulse := {Module, Opts}}) ->
 
 %% pulse
 
--include_lib("kernel/include/logger.hrl").
-
 -spec handle_beat(beat(), [trace]) ->
     ok.
 
 handle_beat(Beat, [trace]) ->
-    ?LOG_DEBUG("[~p] ~p", [?MODULE, Beat]);
+    logger:debug("[~p] ~p", [?MODULE, Beat]);
 handle_beat(_Beat, _) ->
     ok.
