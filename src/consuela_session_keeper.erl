@@ -160,8 +160,8 @@ renew_session(St0 = #{session := #{id := ID}, client := Client}) ->
             _ = beat({session, {renewal, {succeeded, Session, Deadline}}}, St),
             St
     catch
-        error:Reason:Stacktrace ->
-            _ = beat({session, {renewal, {failed, Reason, Stacktrace}}}, St0),
+        error:Reason = {Class, _} when Class == failed; Class == unknown ->
+            _ = beat({session, {renewal, {failed, Reason}}}, St0),
             St0
     end.
 
