@@ -77,7 +77,8 @@ start_link(Ref, Opts) ->
         Pid,
         #{
             id    => {Ref, registry},
-            start => {consuela_registry_server, start_link, [Ref, Registry, ReaperPid, RegistryOpts]}
+            start => {consuela_registry_server, start_link, [Ref, Registry, ReaperPid, RegistryOpts]},
+            timeout => infinity
         }
     ),
     {ok, Pid}.

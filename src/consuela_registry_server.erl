@@ -167,6 +167,7 @@ get_now() ->
     {ok, st()}.
 
 init({Ref, Registry, ReaperRef, Opts}) ->
+    _ = erlang:process_flag(trap_exit, true),
     Store = create_local_store(Ref),
     Cache = create_cache(Ref),
     St = maps:fold(
@@ -242,6 +243,11 @@ handle_info(Info, St) ->
 -spec terminate(_Reason, st()) ->
     ok.
 
+terminate(shutdown, St0) ->
+    % Implying that it's our duty to denounce every registration we know of upon regular shutdown. Otherwise
+    % someone will have to wait for _LockDelay_ to pass until, for example, planned node restart may proceed.
+    _St = fold_local(fun handle_unregister_known/2, St0, St0),
+    ok;
 terminate(_Reason, _St) ->
     ok.
 
@@ -364,8 +370,11 @@ demonitor_name({_Rid, Name, _Pid} = Reg, St = #{monitors := Monitors}) ->
 
 handle_down(MRef, Pid, St0 = #{monitors := Monitors}) ->
     #{MRef := Reg = {_Rid, _Name, Pid}} = Monitors,
-    _ = beat({{unregister, Reg}, started}, St0),
     % No need to lookup local store, it must be there
+    handle_unregister_known(Reg, St0).
+
+handle_unregister_known(Reg, St0) ->
+    _ = beat({{unregister, Reg}, started}, St0),
     {Result, St1} = handle_unregister_global(Reg, St0),
     _ = beat({{unregister, Reg}, Result}, St1),
     St1.
@@ -386,6 +395,14 @@ store_local({Rid, Name, Pid}, #{store := Tid}) ->
 remove_local({_Rid, Name, _Pid}, #{store := Tid}) ->
     true = ets:delete(Tid, Name),
     ok.
+
+fold_local(Fun, Acc0, #{store := Tid}) ->
+    true = ets:safe_fixtable(Tid, true),
+    try
+        ets:foldl(fun ({Name, Pid, Rid}, Acc) -> Fun({Rid, Name, Pid}, Acc) end, Acc0, Tid)
+    after
+        true = ets:safe_fixtable(Tid, false)
+    end.
 
 lookup_local_store(Name, #{store := Tid}) ->
     do_lookup(Name, Tid);
