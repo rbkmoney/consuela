@@ -20,7 +20,8 @@
     session   => session_opts(),
     keeper    => consuela_session_keeper:opts(), % #{} by default
     reaper    => consuela_zombie_reaper:opts(),  % #{} by default
-    registry  => consuela_registry_server:opts() % #{} by default
+    registry  => consuela_registry_server:opts(), % #{} by default
+    shutdown  => timeout() % if not specified uses supervisor default of 5000 ms
 }.
 
 -type consul_opts() :: #{
@@ -75,11 +76,13 @@ start_link(Ref, Opts) ->
     ),
     {ok, _RegistryPid} = supervisor:start_child(
         Pid,
-        #{
-            id    => {Ref, registry},
-            start => {consuela_registry_server, start_link, [Ref, Registry, ReaperPid, RegistryOpts]},
-            timeout => infinity
-        }
+        maps:merge(
+            #{
+                id    => {Ref, registry},
+                start => {consuela_registry_server, start_link, [Ref, Registry, ReaperPid, RegistryOpts]}
+            },
+            maps:with([shutdown], Opts)
+        )
     ),
     {ok, Pid}.
 
