@@ -18,22 +18,55 @@
 
 -type name() :: consuela_registry:name().
 
--export([start_link/3]).
+-export([start_link/4]).
+
+-type opts() :: #{
+    pulse => {module(), _PulseOpts}
+}.
+
+-export_type([opts/0]).
 
 %%
 
--spec start_link(name(), module(), _Args) ->
-    {ok, pid()} | ignore | {error, Reason} when
+-type beat() ::
+    {{leader, name()}, {started, pid()}} |
+    consuela_leader_warden:beat().
+
+-export_type([beat/0]).
+
+-export([handle_beat/2]).
+
+%%
+
+-spec start_link(name(), module(), _Args, opts()) ->
+    {ok, pid()} | {error, Reason} when
         Reason :: {shutdown, term()} | term().
 
-start_link(Name, Module, Args) ->
+start_link(Name, Module, Args, Opts) ->
     case supervisor:start_link({via, consuela, Name}, Module, Args) of
         {ok, Pid} ->
+            _ = beat({{leader, Name}, {started, Pid}}, Opts),
             {ok, Pid};
-        ignore ->
-            ignore;
         {error, {already_started, Pid}} when is_pid(Pid), node(Pid) /= node() ->
-            consuela_leader_warden:start_link(Name, Pid);
+            consuela_leader_warden:start_link(Name, Pid, Opts);
         {error, Reason} ->
             {error, Reason}
     end.
+
+%%
+
+-spec beat(beat(), opts()) ->
+    _.
+
+beat(Beat, #{pulse := {Module, Opts}}) ->
+    Module:handle_beat(Beat, Opts);
+beat(_Beat, #{}) ->
+    ok.
+
+-spec handle_beat(beat(), [trace]) ->
+    ok.
+
+handle_beat(Beat, [trace]) ->
+    logger:debug("[~p] ~p", [?MODULE, Beat]);
+handle_beat(_Beat, _) ->
+    ok.
