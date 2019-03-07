@@ -36,6 +36,9 @@
 
 -export_type([beat/0]).
 
+-callback handle_beat(beat(), _PulseOpts) ->
+    _.
+
 -export([handle_beat/2]).
 
 %%
