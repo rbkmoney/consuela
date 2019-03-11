@@ -21,7 +21,7 @@ await_ready() ->
     await_ready("consul0", consuela_client:new(<<"http://consul0:8500">>, #{})).
 
 await_ready(Node, Client) ->
-    await_ready(Node, Client, genlib_retry:linear(20, 3000)).
+    await_ready(Node, Client, genlib_retry:linear(10, 3000)).
 
 await_ready(Node, Client, Retry) ->
     ct_helper:await(
