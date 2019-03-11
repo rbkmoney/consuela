@@ -109,19 +109,7 @@ end_per_testcase(_Name, C) ->
 
 %% Definitions
 
--define(assertReceive(__Expr),
-    ?assertReceive(__Expr, 1000)
-).
-
--define(assertReceive(__Expr, __Timeout), (begin
-    receive (__Expr) -> ok after (__Timeout) ->
-        erlang:error({assertReceive, [
-            {module, ?MODULE},
-            {line, ?LINE},
-            {expression, (??__Expr)}
-        ]})
-    end
-end)).
+-include("ct_helper.hrl").
 
 -spec zombie_reaping_succeeded(config()) -> _.
 -spec reaper_dies_eventually(config()) -> _.
