@@ -19,6 +19,7 @@
 -type name() :: consuela_registry:name().
 
 -export([start_link/4]).
+-export([which_children/1]).
 
 -type opts() :: #{
     pulse => {module(), _PulseOpts}
@@ -55,6 +56,12 @@ start_link(Name, Module, Args, Opts) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+-spec which_children(name()) ->
+    [{_ChildID | undefined, pid() | restarting | undefined, worker | supervisor, [module()] | dynamic}].
+
+which_children(Name) ->
+    supervisor:which_children({via, consuela, Name}).
 
 %%
 
