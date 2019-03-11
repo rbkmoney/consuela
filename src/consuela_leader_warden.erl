@@ -8,6 +8,7 @@
 -type name() :: consuela_registry:name().
 
 -type opts() :: #{
+    retry => genlib_retry:strategy(),
     pulse => {module(), _PulseOpts}
 }.
 
@@ -46,8 +47,8 @@
 -spec start_link(name(), pid(), opts()) ->
     {ok, pid()}.
 
-start_link(Name, Pid, Opts) ->
-    St = mk_state(Name, Pid, Opts),
+start_link(Name, LeaderPid, Opts) ->
+    St = mk_state(Name, LeaderPid, Opts),
     {ok, Pid} = gen_server:start_link(?MODULE, St, []),
     _ = beat({{warden, Name}, {started, Pid}}, St),
     {ok, Pid}.
@@ -57,11 +58,13 @@ start_link(Name, Pid, Opts) ->
 -define(DEFER_TIMEOUT, 1000).
 
 -type st() :: #{
-    name  := name(),
-    pid   := pid(),
-    mref  => reference(),
-    tref  => reference(),
-    pulse := {module(), _PulseOpts}
+    name           := name(),
+    pid            := pid(),
+    mref           => reference(),
+    retry_strategy := genlib_retry:strategy(),
+    retry_state    => genlib_retry:strategy(),
+    tref           => reference(),
+    pulse          := {module(), _PulseOpts}
 }.
 
 -type from() :: {pid(), reference()}.
@@ -71,16 +74,17 @@ start_link(Name, Pid, Opts) ->
 
 mk_state(Name, Pid, Opts) ->
     #{
-        name  => Name,
-        pid   => Pid,
-        pulse => maps:get(pulse, Opts, {?MODULE, []})
+        name           => Name,
+        pid            => Pid,
+        pulse          => maps:get(pulse, Opts, {?MODULE, []}),
+        retry_strategy => maps:get(retry, Opts, genlib_retry:linear({max_total_timeout, 30 * 1000}, 5000))
     }.
 
 -spec init(st()) ->
     {ok, st(), hibernate}.
 
 init(St) ->
-    {ok, remonitor(St), hibernate}.
+    {ok, remonitor(reset_retry_state(St)), hibernate}.
 
 -spec handle_call(_Call, from(), st()) ->
     {noreply, st(), hibernate}.
@@ -121,8 +125,19 @@ handle_down(MRef, Pid, Reason, St = #{mref := MRef, name := Name, pid := Pid}) -
     handle_down(Reason, maps:remove(mref, St)).
 
 handle_down(noconnection, St) ->
-    {noreply, defer_remonitor(St), hibernate};
-handle_down(Reason, St = #{name := Name}) ->
+    handle_node_down(St);
+handle_down(Reason, St) ->
+    handle_process_down(Reason, St).
+
+handle_node_down(St = #{retry_state := Retry}) ->
+    case genlib_retry:next_step(Retry) of
+        {wait, Timeout, Retry1} ->
+            {noreply, defer_remonitor(Timeout, St#{retry_state := Retry1}), hibernate};
+        finish ->
+            handle_process_down(noconnection, St)
+    end.
+
+handle_process_down(Reason, St = #{name := Name}) ->
     _ = beat({{warden, Name}, {stopped, self()}}, St),
     {stop, {?MODULE, {leader_lost, Reason}}, St}.
 
@@ -130,7 +145,15 @@ handle_down(Reason, St = #{name := Name}) ->
     {noreply, st(), hibernate}.
 
 handle_timeout(TRef, remonitor, St = #{tref := TRef}) ->
-    {noreply, remonitor(maps:remove(tref, St)), hibernate}.
+    handle_remonitor(maps:remove(tref, St)).
+
+handle_remonitor(St = #{pid := Pid}) ->
+    case net_kernel:connect_node(node(Pid)) of
+        true ->
+            {noreply, remonitor(reset_retry_state(St)), hibernate};
+        false ->
+            handle_node_down(St)
+    end.
 
 -spec terminate(_Reason, st()) ->
     ok.
@@ -153,13 +176,15 @@ remonitor(St0 = #{pid := Pid}) ->
     _ = beat({{monitor, MRef}, set}, St1),
     St1.
 
-defer_remonitor(St0 = #{}) ->
+defer_remonitor(Timeout, St0 = #{}) ->
     false = maps:is_key(tref, St0),
-    Timeout = ?DEFER_TIMEOUT,
     TRef = consuela_timer:start(Timeout, remonitor),
     St1 = St0#{tref => TRef},
     _ = beat({{timer, TRef}, {started, Timeout}}, St1),
     St1.
+
+reset_retry_state(St0 = #{retry_strategy := Retry}) ->
+    St0#{retry_state => Retry}.
 
 %%
 
