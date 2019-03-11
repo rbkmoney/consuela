@@ -91,7 +91,7 @@ stop_slave(Node) ->
         ok ->
             _ = ct_helper:await(pang, fun () -> net_adm:ping(Node) end, genlib_retry:linear(10, 500)),
             ok;
-        {badrpc,nodedown} ->
+        {badrpc, nodedown} ->
             ok
     end.
 
