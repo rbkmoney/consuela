@@ -8,6 +8,8 @@
 -type name() :: consuela_registry:name().
 
 -type opts() :: #{
+    % For better performance and stability this strategy should be aligned with active session's lock delay,
+    % in the sense that strategy's max total timeout should be more than that but not much more.
     retry => genlib_retry:strategy(),
     pulse => {module(), _PulseOpts}
 }.
