@@ -117,7 +117,7 @@ leader_liveness_holds(C) ->
     Name = ?FUNCTION_NAME,
     TTL = 60,
     Nodes0 = ?config(nodes, C),
-    Client = consuela_client:new("http://consul0:8500", #{}),
+    Client = consuela_client:new("http://consul0:8500", #{pulse => mk_pulse(client)}),
     {ok, Session} = consuela_session:create(genlib:to_binary(Name), "consul0", TTL, Client),
     try
         Opts = #{
@@ -144,7 +144,7 @@ leader_liveness_holds(_Name, [], _IsLive) ->
     ok.
 
 is_live(Name, Client) ->
-    _ = ?assertMatch({ok, _}, ct_lock_holder:get(Name, Client)),
+    _ = ?assertMatch({ok, #{session := _}}, ct_lock_holder:get(Name, Client)),
     ok.
 
 wait_leader(Name) ->
@@ -205,8 +205,12 @@ mk_pulse(Producer) ->
 handle_beat(Beat, {Producer, Opts}) ->
     genlib_map:foreach(
         fun
-            (logger, Node) -> rpc:call(Node, ct, pal, ["<~p> [~p] ~9999p", [node(), Producer, Beat]]);
-            (relay , Pid ) -> Pid ! {Producer, Beat}
+            (logger, Node) when Node == node() ->
+                ct:pal("[~p] ~9999p", [Producer, Beat]);
+            (logger, Node) ->
+                rpc:call(Node, ct, pal, ["<~p> [~p] ~9999p", [node(), Producer, Beat]]);
+            (relay , Pid) ->
+                Pid ! {Producer, Beat}
         end,
         Opts
     ).

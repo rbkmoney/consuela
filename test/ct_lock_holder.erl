@@ -48,7 +48,8 @@ get(Name, Client) ->
 
 init(St = #{name := Name, session := Session, client := Client}) ->
     _Was = erlang:process_flag(trap_exit, true),
-    Lock = consuela_lock:hold({<<?MODULE_STRING>>, Name}, [], Session, Client),
+    ok = consuela_lock:hold({<<?MODULE_STRING>>, Name}, [], Session, Client),
+    {ok, Lock} = consuela_lock:get({<<?MODULE_STRING>>, Name}, Client),
     {ok, St#{lock => Lock}}.
 
 -spec handle_call(_Call, _From, st()) ->
@@ -73,7 +74,7 @@ handle_info(_Info, St) ->
     _.
 
 terminate(_Reason, _St = #{lock := Lock, client := Client}) ->
-    ok = consuela_lock:release(Lock, Client),
+    ok = consuela_lock:delete(Lock, Client),
     ok.
 
 -spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) ->
