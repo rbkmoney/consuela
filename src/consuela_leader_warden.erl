@@ -55,8 +55,6 @@ start_link(Name, LeaderPid, Opts) ->
 
 %%
 
--define(DEFER_TIMEOUT, 1000).
-
 -type st() :: #{
     name           := name(),
     pid            := pid(),
