@@ -1,5 +1,10 @@
 %%%
 %%% Testing discovery mechanism
+%%%
+%%% NOTES
+%%%
+%%% Most of the SUT setup happens through docker compose orchestration, see `start-discovery-node.sh`. We only
+%%% consider checking that the whole three-node cluster formed without manual intervention.
 
 -module(discovery_SUITE).
 

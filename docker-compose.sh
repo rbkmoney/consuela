@@ -42,6 +42,24 @@ services:
     command:
       agent -server -bootstrap-expect 3 -ui -client 0.0.0.0
 
+  discovery0: &discovery
+    image: dr.rbkmoney.com/rbkmoney/build:ee0028263b7663828614e3a01764a836b4018193
+    networks:
+      - consul
+    volumes:
+      - .:/opt/consuela
+    working_dir:
+      /opt/consuela
+    command: ["/bin/bash", "-c", "./test/start-discovery-node.sh consul0"]
+
+  discovery1:
+    <<: *discovery
+    command: ["/bin/bash", "-c", "./test/start-discovery-node.sh consul1"]
+
+  discovery2:
+    <<: *discovery
+    command: ["/bin/bash", "-c", "./test/start-discovery-node.sh consul2"]
+
   consuela:
     image: ${BUILD_IMAGE}
     networks:
