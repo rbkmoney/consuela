@@ -145,7 +145,7 @@ handle_process_down(Reason, St = #{name := Name, pid := Pid}) ->
             _ = beat({{warden, Name}, {stopped, self()}}, St),
             {stop, mk_stop_reason(Reason), St}
     catch
-        error:{consuela, _} ->
+        exit:{consuela, _} ->
             handle_process_ghost(Reason, St)
     end.
 
