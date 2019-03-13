@@ -33,7 +33,7 @@
 -type beat() ::
     {{warden, name()}, {started | stopped, pid()}} |
     {{leader, name()}, {down, pid(), _Reason}} |
-    {{timer, reference()}, {started, timeout()} | fired} |
+    {{timer, reference()}, {started, _Msg, timeout()} | fired} |
     {{monitor, reference()}, set | fired} |
     {unexpected, {{call, from()} | cast | info, _Msg}}.
 
@@ -137,9 +137,25 @@ handle_node_down(St = #{retry_state := Retry}) ->
             handle_process_down(noconnection, St)
     end.
 
-handle_process_down(Reason, St = #{name := Name}) ->
-    _ = beat({{warden, Name}, {stopped, self()}}, St),
-    {stop, mk_stop_reason(Reason), St}.
+handle_process_down(Reason, St = #{name := Name, pid := Pid}) ->
+    try consuela:whereis_name(Name) of
+        Pid ->
+            handle_process_ghost(Reason, St);
+        _ ->
+            _ = beat({{warden, Name}, {stopped, self()}}, St),
+            {stop, mk_stop_reason(Reason), St}
+    catch
+        error:{consuela, _} ->
+            handle_process_ghost(Reason, St)
+    end.
+
+handle_process_ghost(Reason, St = #{retry_state := Retry}) ->
+    case genlib_retry:next_step(Retry) of
+        {wait, Timeout, Retry1} ->
+            {noreply, defer_shutdown(Reason, Timeout, St#{retry_state := Retry1}), hibernate};
+        finish ->
+            {stop, mk_stop_reason(Reason), St}
+    end.
 
 mk_stop_reason(Reason) when Reason == normal; Reason == shutdown; element(1, Reason) == shutdown ->
     {shutdown, {?MODULE, {leader_lost, Reason}}};
@@ -150,7 +166,9 @@ mk_stop_reason(Reason) ->
     {noreply, st(), hibernate}.
 
 handle_timeout(TRef, remonitor, St = #{tref := TRef}) ->
-    handle_remonitor(maps:remove(tref, St)).
+    handle_remonitor(maps:remove(tref, St));
+handle_timeout(TRef, {shutdown, Reason}, St = #{tref := TRef}) ->
+    handle_process_down(Reason, maps:remove(tref, St)).
 
 handle_remonitor(St = #{pid := Pid}) ->
     case net_kernel:connect_node(node(Pid)) of
@@ -181,11 +199,17 @@ remonitor(St0 = #{pid := Pid}) ->
     _ = beat({{monitor, MRef}, set}, St1),
     St1.
 
-defer_remonitor(Timeout, St0 = #{}) ->
+defer_remonitor(Timeout, St) ->
+    defer(remonitor, Timeout, St).
+
+defer_shutdown(Reason, Timeout, St) ->
+    defer({shutdown, Reason}, Timeout, St).
+
+defer(Message, Timeout, St0 = #{}) ->
     false = maps:is_key(tref, St0),
-    TRef = consuela_timer:start(Timeout, remonitor),
+    TRef = consuela_timer:start(Timeout, Message),
     St1 = St0#{tref => TRef},
-    _ = beat({{timer, TRef}, {started, Timeout}}, St1),
+    _ = beat({{timer, TRef}, {started, Message, Timeout}}, St1),
     St1.
 
 reset_retry_state(St0 = #{retry_strategy := Retry}) ->
