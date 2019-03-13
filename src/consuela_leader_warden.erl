@@ -139,7 +139,12 @@ handle_node_down(St = #{retry_state := Retry}) ->
 
 handle_process_down(Reason, St = #{name := Name}) ->
     _ = beat({{warden, Name}, {stopped, self()}}, St),
-    {stop, {?MODULE, {leader_lost, Reason}}, St}.
+    {stop, mk_stop_reason(Reason), St}.
+
+mk_stop_reason(Reason) when Reason == normal; Reason == shutdown; element(1, Reason) == shutdown ->
+    {shutdown, {?MODULE, {leader_lost, Reason}}};
+mk_stop_reason(Reason) ->
+    {error, {?MODULE, {leader_lost, Reason}}}.
 
 -spec handle_timeout(reference(), remonitor, st()) ->
     {noreply, st(), hibernate}.
