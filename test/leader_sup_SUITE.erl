@@ -114,22 +114,17 @@ leader_uniqueness_holds(C) ->
     ok.
 
 leader_liveness_holds(C) ->
+    TTL = 10,
     Name = ?FUNCTION_NAME,
-    TTL = 60,
     Nodes0 = ?config(nodes, C),
     Client = consuela_client:new("http://consul0:8500", #{pulse => mk_pulse(client)}),
-    {ok, Session} = consuela_session:create(genlib:to_binary(Name), "consul0", TTL, Client),
-    try
-        Opts = #{
-            retry => genlib_retry:linear(1, 500),
-            pulse => {?MODULE, {leadersup, #{logger => node(), relay => self()}}}
-        },
-        ok = start_leaders(Nodes0, [Name, ?MODULE, {holder, Name, Session, Client}, Opts]),
-        ok = leader_liveness_holds(Name, Nodes0, fun () -> is_live(Name, Client) end),
-        ok
-    after
-        consuela_session:destroy(Session, Client)
-    end.
+    Opts = #{
+        retry => genlib_retry:linear(1, 500),
+        pulse => {?MODULE, {leadersup, #{logger => node(), relay => self()}}}
+    },
+    ok = start_leaders(Nodes0, [Name, ?MODULE, {holder, Name, "consul0", TTL, Client}, Opts]),
+    ok = leader_liveness_holds(Name, Nodes0, fun () -> is_live(Name, Client) end),
+    ok.
 
 leader_liveness_holds(Name, Nodes = [_ | _], IsLive) ->
     N1 = length(Nodes) - 1,
@@ -157,7 +152,8 @@ wait_leader(Name) ->
 start_leaders(Nodes, Args) ->
     {OkPids, []} = rpc:multicall(Nodes, supervisor, start_child, [kernel_safe_sup, #{
         id    => leader,
-        start => {consuela_leader_supervisor, start_link, Args}
+        start => {consuela_leader_supervisor, start_link, Args},
+        type  => supervisor
     }]),
     _ = [?assertMatch({ok, _}, E) || E <- OkPids],
     ok.
@@ -165,7 +161,8 @@ start_leaders(Nodes, Args) ->
 stop_leader(Pid, Nodes) ->
     Node = node(Pid),
     _ = ?assert(lists:member(Node, Nodes)),
-    ok = stop_slave(Node),
+    _ = ?assertEqual(ok, rpc:call(Node, supervisor, terminate_child, [kernel_safe_sup, leader])),
+    _ = ?assertEqual(ok, stop_slave(Node)),
     Nodes -- [Node].
 
 %% Supervisor
@@ -180,11 +177,11 @@ init({dummy, Name}) ->
             start => {genlib_adhoc_supervisor, start_link, [{local, Name}, #{}, []]}
         }
     ]}};
-init({holder, Name, Session, Client}) ->
+init({holder, Name, Nodename, TTL, Client}) ->
     {ok, {#{}, [
         #{
             id    => keeper,
-            start => {ct_lock_holder, start_link, [Name, Session, Client]}
+            start => {ct_lock_holder, start_link, [Name, Nodename, TTL, Client]}
         }
     ]}}.
 
