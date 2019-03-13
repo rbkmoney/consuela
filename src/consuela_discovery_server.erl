@@ -185,8 +185,8 @@ discover(St = #{}) ->
         {ok, Hs} ->
             Nodes = collect_nodes(Hs),
             _ = beat({discovery, {succeeded, Nodes}}, St),
-            NodesLeft = Nodes -- erlang:nodes(),
-            try_connect_nodes(St#{nodes := NodesLeft})
+            NodesLeft = Nodes -- erlang:nodes([visible, this]),
+            try_connect_nodes(St#{nodes => NodesLeft})
     catch
         error:{Class, _} = Error when Class == unknown; Class == failed ->
             _ = beat({discovery, {failed, Error}}, St),
@@ -197,7 +197,7 @@ get_service_health(#{service := Service, tags := Tags, client := Client}) ->
     consuela_health:get(Service, Tags, true, Client).
 
 collect_nodes(Hs) ->
-    [mk_nodename(A) || A <- lists:usort([V || #{service := #{address := V}} <- Hs])].
+    [mk_nodename(A) || A <- lists:usort([V || #{service := #{endpoint := {V, _}}} <- Hs])].
 
 try_connect_nodes(St = #{nodes := Nodes}) ->
     _ = genlib_pmap:map(fun (N) -> try_connect_node(N, St) end, Nodes),
