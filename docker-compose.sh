@@ -52,7 +52,7 @@ services:
     working_dir:
       /opt/consuela
     command:
-      /sbin/init
+      /usr/bin/epmd
 
 networks:
   consul:
