@@ -55,7 +55,9 @@ init_per_suite(C) ->
     [{n, 3}, {service, <<"discovery">>}, {apps, Apps} | C].
 
 end_per_suite(C) ->
-    genlib_app:test_application_stop(?config(apps, C)).
+    ok = genlib_app:test_application_stop(?config(apps, C)),
+    ok = net_kernel:stop(),
+    ok.
 
 %% Definitions
 
