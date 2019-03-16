@@ -79,7 +79,7 @@ await(Expect, Extract, Compute, Retry0) ->
             case genlib_retry:next_step(Retry0) of
                 {wait, To, Retry1} ->
                     ok = timer:sleep(To),
-                    await(Expect, Compute, Retry1);
+                    await(Expect, Extract, Compute, Retry1);
                 finish ->
                     ?assertEqual(Expect, NotYet)
             end

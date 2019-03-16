@@ -47,9 +47,9 @@ services:
     networks:
       - consul
     volumes:
-      - .:/opt/consuela
+      - .:$PWD
     working_dir:
-      /opt/consuela
+      $PWD
     command: ["/bin/bash", "-c", "./test/start-discovery-node.sh consul0"]
 
   discovery1:
@@ -65,10 +65,10 @@ services:
     networks:
       - consul
     volumes:
-      - .:/opt/consuela
+      - .:$PWD
       - $HOME/.cache:/home/$UNAME/.cache
     working_dir:
-      /opt/consuela
+      $PWD
     command:
       /usr/bin/epmd
 
