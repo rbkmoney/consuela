@@ -50,15 +50,15 @@ services:
       - .:$PWD
     working_dir:
       $PWD
-    command: ["/bin/bash", "-c", "./test/start-discovery-node.sh consul0"]
+    command: /bin/bash -c './test/start-discovery-node.sh consul0'
 
   discovery1:
     <<: *discovery
-    command: ["/bin/bash", "-c", "./test/start-discovery-node.sh consul1"]
+    command: /bin/bash -c './test/start-discovery-node.sh consul1'
 
   discovery2:
     <<: *discovery
-    command: ["/bin/bash", "-c", "./test/start-discovery-node.sh consul2"]
+    command: /bin/bash -c './test/start-discovery-node.sh consul2'
 
   consuela:
     image: ${BUILD_IMAGE}
