@@ -9,10 +9,6 @@ BUILD_IMAGE_TAG := ee0028263b7663828614e3a01764a836b4018193
 CALL_ANYWHERE := all submodules compile xref lint dialyze clean distclean testcompile
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
-define DOCKER_COMPOSE_PREEXEC_HOOK
-	make wc_testcompile
-endef
-
 all: compile
 
 -include $(UTILS_PATH)/make_lib/utils_container.mk
