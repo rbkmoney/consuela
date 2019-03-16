@@ -6,7 +6,7 @@ TEMPLATES_PATH := .
 SERVICE_NAME := consuela
 BUILD_IMAGE_TAG := ee0028263b7663828614e3a01764a836b4018193
 
-CALL_ANYWHERE := all submodules compile xref lint dialyze clean distclean testcompile
+CALL_ANYWHERE := all submodules compile xref lint dialyze clean distclean
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
 all: compile
@@ -35,9 +35,6 @@ clean:
 
 distclean:
 	rm -rf _build
-
-testcompile:
-	$(REBAR) as test compile
 
 test: submodules
 	$(REBAR) eunit
