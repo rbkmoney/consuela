@@ -64,7 +64,7 @@ groups() ->
 init_per_suite(C) ->
     Apps =
         genlib_app:start_application(ranch) ++
-        ct_helper:ensure_app_loaded(consuela),
+        genlib_app:start_application(consuela),
     ok = ct_consul:await_ready(),
     [{suite_apps, Apps} | C].
 

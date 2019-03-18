@@ -12,7 +12,7 @@
 
 run(Nodename, Hostname, ConsulUrl, Lifetime) ->
     ok     = logger:set_primary_config(level, info),
-    _Apps  = ct_helper:ensure_app_loaded(consuela),
+    _Apps  = genlib_app:start_application(consuela),
     ok     = ct_consul:await_ready(),
     Client = consuela_client:new(ConsulUrl, opts(client)),
     ok     = register(Nodename, Hostname, Lifetime, Client),

@@ -50,7 +50,7 @@ init_per_suite(C) ->
     Nodename = list_to_atom(?MODULE_STRING ++ "@" ++ inet:ntoa(Address)),
     {ok, _Pid} = net_kernel:start([Nodename, longnames]),
     true = erlang:set_cookie(node(), discovery),
-    Apps = ct_helper:ensure_app_loaded(consuela),
+    Apps = genlib_app:start_application(consuela),
     ok = ct_consul:await_ready(),
     [{n, 3}, {service, <<"discovery">>}, {apps, Apps} | C].
 

@@ -23,6 +23,8 @@
     pulse    => {module(), _PulseOpts}
 }.
 
+-export_type([service/0]).
+-export_type([tag/0]).
 -export_type([opts/0]).
 
 -export([start_link/4]).
