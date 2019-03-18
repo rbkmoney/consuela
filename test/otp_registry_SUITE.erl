@@ -54,15 +54,17 @@ all() ->
     _.
 
 init_per_suite(C) ->
-    Apps0 = ct_helper:ensure_app_loaded(consuela),
+    Apps0 = genlib_app:start_application(hackney),
     ok = ct_consul:await_ready(),
     Apps1 = genlib_app:start_application_with(consuela, [
-        {nodename  , "consul0"},
-        {namespace , <<?MODULE_STRING>>},
-        {consul    , #{opts => #{pulse => {?MODULE, {client, debug}}}}},
-        {keeper    , #{pulse => {?MODULE, {keeper, info}}}},
-        {reaper    , #{pulse => {?MODULE, {reaper, info}}}},
-        {registry  , #{pulse => {?MODULE, {registry, info}}}}
+        {registry, #{
+            nodename  => "consul0",
+            namespace => <<?MODULE_STRING>>,
+            consul    => #{opts => #{pulse => {?MODULE, {client, debug}}}},
+            keeper    => #{pulse => {?MODULE, {keeper, info}}},
+            reaper    => #{pulse => {?MODULE, {reaper, info}}},
+            registry  => #{pulse => {?MODULE, {registry, info}}}
+        }}
     ]),
     [{suite_apps, Apps0 ++ Apps1} | C].
 

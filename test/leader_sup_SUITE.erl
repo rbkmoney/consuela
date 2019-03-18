@@ -56,12 +56,14 @@ all() ->
 init_per_suite(C) ->
     {ok, _Pid} = net_kernel:start([?MODULE, shortnames]),
     true = erlang:set_cookie(node(), ?MODULE),
-    Apps = ct_helper:ensure_app_loaded(consuela),
+    Apps = genlib_app:start_application(consuela),
     ok = ct_consul:await_ready(),
     [{apps, Apps} | C].
 
 end_per_suite(C) ->
-    genlib_app:test_application_stop(?config(apps, C)).
+    ok = genlib_app:test_application_stop(?config(apps, C)),
+    ok = net_kernel:stop(),
+    ok.
 
 init_per_testcase(Name, C) ->
     N = 3,
@@ -80,9 +82,11 @@ start_slave(Name, CodePath) ->
     {ok, Node} = slave:start(net_adm:localhost(), Name, "-setcookie " ++ ?MODULE_STRING),
     true = rpc:call(Node, code, set_path, [CodePath]),
     _Apps = [_ | _] = rpc:call(Node, genlib_app, start_application_with, [consuela, [
-        {nodename  , "consul0"},
-        {namespace , <<?MODULE_STRING>>},
-        {registry  , #{pulse => mk_pulse(registry)}}
+        {registry, #{
+            nodename  => "consul0",
+            namespace => <<?MODULE_STRING>>,
+            registry  => #{pulse => mk_pulse(registry)}
+        }}
     ]]),
     Node.
 
