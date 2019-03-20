@@ -61,8 +61,8 @@
     } |
     {{register | unregister, {name(), pid()} | reg()},
         started   |
-        succeeded |
-        {failed, _Reason}
+        {finished, ok | {error, _Reason}} |
+        {failed, _FailureReason}
     } |
     {unexpected,
         {{call, from()} | cast | info, _Msg}
@@ -270,7 +270,12 @@ handle_activity(Action, {Name, Pid} = Association, St0) ->
         unregister ->
             handle_unregister(Name, Pid, St0)
     end,
-    _ = beat({Subject, Result}, St1),
+    _ = case Result of
+        {done, Done} ->
+            beat({Subject, {finished, Done}}, St1);
+        {failed, _} ->
+            beat({Subject, Result}, St1)
+    end,
     {Result, St1}.
 
 handle_register(Name, Pid, St) ->
@@ -378,7 +383,12 @@ handle_down(MRef, Pid, St0 = #{monitors := Monitors}) ->
 handle_unregister_known(Reg, St0) ->
     _ = beat({{unregister, Reg}, started}, St0),
     {Result, St1} = handle_unregister_global(Reg, St0),
-    _ = beat({{unregister, Reg}, Result}, St1),
+    _ = case Result of
+        {done, Done} ->
+            beat({{unregister, Reg}, {finished, Done}}, St1);
+        {failed, _} ->
+            beat({{unregister, Reg}, Result}, St1)
+    end,
     St1.
 
 %%
