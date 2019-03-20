@@ -37,6 +37,8 @@
 -callback handle_beat(beat(), _Opts) ->
     _.
 
+-export_type([beat/0]).
+
 -export([handle_beat/2]).
 
 %% api
