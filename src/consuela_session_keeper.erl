@@ -48,6 +48,8 @@
 
 -export([handle_beat/2]).
 
+-export_type([beat/0]).
+
 %%
 
 -type opts() :: #{
