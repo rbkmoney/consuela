@@ -139,7 +139,10 @@ all(Ref) ->
     _Result.
 
 deadline_call(Ref, Call, ETC, Timeout) when is_integer(ETC), ETC > 0, Timeout > ETC ->
-    gen_server:call(Ref, {deadline_call, compute_call_deadline(ETC, Timeout), Call}, Timeout).
+    try gen_server:call(Ref, {deadline_call, compute_call_deadline(ETC, Timeout), Call}, Timeout) catch
+        exit:{timeout, _} ->
+            {failed, timeout}
+    end.
 
 compute_call_deadline(ETC, Timeout) when is_integer(Timeout) ->
     get_now() + Timeout - ETC.
