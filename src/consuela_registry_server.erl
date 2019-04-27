@@ -79,8 +79,9 @@
 
 %% ETC = Estimated Time to Completion
 
--define(REGISTRATION_ETC       , 100).  % TODO too short?
--define(REGISTRATION_TIMEOUT   , 1000). % TODO too short?
+-define(REGISTER_ETC       , 100).  % TODO too short?
+-define(REGISTER_TIMEOUT   , 1000). % TODO too short?
+-define(REGISTER_QLEN_LIMIT, 10).   % TODO too small?
 
 -type ref() :: atom().
 
@@ -101,13 +102,15 @@ start_link(Ref, Registry, ReaperRef, Opts) ->
     ok | {error, exists}.
 
 register(Ref, Name, Pid) when is_pid(Pid) ->
-    handle_result(deadline_call(Ref, {register, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT)).
+    Call = {register, {Name, Pid}},
+    handle_result(deadline_call(Ref, Call, ?REGISTER_ETC, ?REGISTER_TIMEOUT, ?REGISTER_QLEN_LIMIT)).
 
 -spec unregister(ref(), name(), pid()) ->
     ok | {error, notfound}.
 
 unregister(Ref, Name, Pid) when is_pid(Pid) ->
-    handle_result(deadline_call(Ref, {unregister, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT)).
+    Call = {unregister, {Name, Pid}},
+    handle_result(deadline_call(Ref, Call, ?REGISTER_ETC, ?REGISTER_TIMEOUT, ?REGISTER_QLEN_LIMIT)).
 
 handle_result({done, Done}) ->
     Done;
@@ -134,12 +137,24 @@ all(Ref) ->
 
 -type etc()      :: pos_integer().
 -type deadline() :: integer() | infinity.
+-type message_queue_length() :: non_neg_integer().
 
--spec deadline_call(ref(), _Call, etc(), timeout()) ->
+-spec deadline_call(ref(), _Call, etc(), timeout(), _Limit :: message_queue_length() | infinity) ->
     _Result.
 
+deadline_call(Ref, Call, ETC, Timeout, QueueLengthLimit) when is_integer(QueueLengthLimit), QueueLengthLimit >= 0 ->
+    case get_queue_length(Ref) of
+        L when L < QueueLengthLimit ->
+            deadline_call(Ref, Call, ETC, Timeout);
+        _ -> % TODO we'll probably want to measure it
+            {failed, overload}
+    end;
+deadline_call(Ref, Call, ETC, Timeout, infinity) ->
+    deadline_call(Ref, Call, ETC, Timeout).
+
 deadline_call(Ref, Call, ETC, Timeout) when is_integer(ETC), ETC > 0, Timeout > ETC ->
-    try gen_server:call(Ref, {deadline_call, compute_call_deadline(ETC, Timeout), Call}, Timeout) catch
+    Deadline = compute_call_deadline(ETC, Timeout),
+    try gen_server:call(Ref, {deadline_call, Deadline, Call}, Timeout) catch
         exit:{timeout, _} ->
             {failed, timeout}
     end.
@@ -191,6 +206,7 @@ init({Ref, Registry, ReaperRef, Opts}) ->
         Opts
     ),
     ok = cache_value(registry, Registry, St),
+    ok = update_queue_length(St),
     {ok, St}.
 
 -type call() ::
@@ -210,11 +226,11 @@ handle_call({deadline_call, Deadline, Call} = Subject, From, St) ->
         _ ->
             % We may not complete operation in time, so just reject it
             _ = beat({Subject, rejected}, St),
-            {noreply, St}
+            noreply(St)
     end;
 handle_call(Call, From, St) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
-    {noreply, St}.
+    noreply(St).
 
 -spec handle_regular_call(call(), from(), st()) ->
     {reply, _Result, st()}.
@@ -224,26 +240,26 @@ handle_regular_call({Action, Association}, _From, St0) when
     Action == unregister
 ->
     {Result, St1} = handle_activity(Action, Association, St0),
-    {reply, Result, St1}.
+    reply(Result, St1).
 
 -spec handle_cast(_Cast, st()) ->
     {noreply, st()}.
 
 handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
-    {noreply, St}.
+    noreply(St).
 
 -type down() :: {'DOWN', reference(), process, pid(), _Reason}.
 
 -spec handle_info(down(), st()) ->
-    {noreply, st()} | {noreply, st(), 0}.
+    {noreply, st()}.
 
 handle_info({'DOWN', MRef, process, Pid, _Reason}, St) ->
     % TODO beat?
-    {noreply, handle_down(MRef, Pid, St)};
+    noreply(handle_down(MRef, Pid, St));
 handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
-    {noreply, St}.
+    noreply(St).
 
 -spec terminate(_Reason, st()) ->
     ok.
@@ -261,6 +277,34 @@ terminate(_Reason, _St) ->
 
 code_change(_Vsn, St, _Extra) ->
     {ok, St}.
+
+-spec reply(_Result, st()) ->
+    {reply, _Result, st()}.
+
+reply(Result, St) ->
+    ok = update_queue_length(St),
+    {reply, Result, St}.
+
+-spec noreply(st()) ->
+    {noreply, st()}.
+
+noreply(St) ->
+    ok = update_queue_length(St),
+    {noreply, St}.
+
+%%
+
+-spec get_queue_length(ref()) ->
+    message_queue_length().
+
+get_queue_length(Ref) ->
+    get_cached_value(message_queue_length, Ref).
+
+-spec update_queue_length(st()) ->
+    ok.
+
+update_queue_length(St) ->
+    cache_value(message_queue_length, erlang:process_info(self(), message_queue_len), St).
 
 %%
 
