@@ -142,8 +142,7 @@ handle_process_down(Reason, St = #{name := Name, pid := Pid}) ->
         Pid ->
             handle_process_ghost(Reason, St);
         _ ->
-            _ = beat({{warden, Name}, {stopped, self()}}, St),
-            {stop, mk_stop_reason(Reason), St}
+            go_down(Reason, St)
     catch
         error:{_Class, _Reason} ->
             handle_process_ghost(Reason, St)
@@ -154,8 +153,12 @@ handle_process_ghost(Reason, St = #{retry_state := Retry}) ->
         {wait, Timeout, Retry1} ->
             {noreply, defer_shutdown(Reason, Timeout, St#{retry_state := Retry1}), hibernate};
         finish ->
-            {stop, mk_stop_reason(Reason), St}
+            go_down(Reason, St)
     end.
+
+go_down(Reason, St = #{name := Name}) ->
+    _ = beat({{warden, Name}, {stopped, self()}}, St),
+    {stop, mk_stop_reason(Reason), St}.
 
 mk_stop_reason(Reason) when Reason == normal; Reason == shutdown; element(1, Reason) == shutdown ->
     {shutdown, {?MODULE, {leader_lost, Reason}}};

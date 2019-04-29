@@ -1,6 +1,6 @@
 %%%
 %%% A process to defer reaping up zombie names, which process is dead but name is still possibly there in
-%%% Consul.
+%%% Consul. Also can be used to asynchronously reap registrations when a processes die for example.
 
 -module(consuela_zombie_reaper).
 
@@ -11,6 +11,7 @@
 -export([start_link/2]).
 
 -export([enqueue/2]).
+-export([enqueue/3]).
 % TODO
 % -export([dequeue/3]) ?.
 
@@ -67,12 +68,17 @@
 start_link(Registry, Opts) ->
     gen_server:start_link(?MODULE, {Registry, Opts}, []).
 
-
 -spec enqueue(ref(), zombie()) ->
     ok.
 
 enqueue(Ref, Zombie) ->
-    gen_server:cast(Ref, {enqueue, Zombie}).
+    enqueue(Ref, Zombie, #{}).
+
+-spec enqueue(ref(), zombie(), #{drain => boolean()}) ->
+    ok.
+
+enqueue(Ref, Zombie, Opts) ->
+    gen_server:cast(Ref, {enqueue, Zombie, Opts}).
 
 -spec drain(ref()) ->
     ok.
@@ -100,6 +106,8 @@ drain(Ref) ->
     {ok, st()}.
 
 init({Registry, Opts}) ->
+    % to have a chance to drain queue containing processes which just died
+    _ = erlang:process_flag(trap_exit, true),
     St = maps:fold(
         fun
             (retry, V, St) ->
@@ -129,10 +137,10 @@ handle_call(Call, From, St) ->
 -spec handle_cast(cast(), st()) ->
     {noreply, st()}.
 
-handle_cast({enqueue, Zombie}, St) ->
-    {noreply, handle_enqueue(Zombie, St)};
+handle_cast({enqueue, Zombie, Opts}, St) ->
+    {noreply, handle_enqueue(Zombie, Opts, St)};
 handle_cast(drain, St) ->
-    {noreply, try_force_timer(reset_retry_state(St))};
+    {noreply, try_drain_queue(St)};
 handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
     {noreply, St}.
@@ -144,7 +152,7 @@ handle_cast(Cast, St) ->
 
 handle_info({timeout, TimerRef, clean}, St = #{timer := TimerRef}) ->
     _ = beat({{timer, TimerRef}, fired}, St),
-    {noreply, try_clean_queue(maps:remove(timer, St))};
+    {noreply, try_clean_queue(regular, maps:remove(timer, St))};
 handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
     {noreply, St}.
@@ -163,12 +171,25 @@ code_change(_Vsn, St, _Extra) ->
 
 %%
 
-handle_enqueue(Zombie, St0 = #{queue := Q}) ->
+handle_enqueue(Zombie, Opts, St0 = #{queue := Q}) ->
     St1 = St0#{queue := queue:in(Zombie, Q)},
     _ = beat({{zombie, Zombie}, enqueued}, St1),
-    try_start_timer(St1).
+    case Opts of
+        #{drain := true} ->
+            try_clean_queue(draining, St1);
+        #{} ->
+            try_start_timer(St1)
+    end.
 
-try_clean_queue(St0 = #{queue := Q0, registry := Registry}) ->
+try_drain_queue(St = #{queue := Queue}) ->
+    case queue:is_empty(Queue) of
+        false ->
+            try_clean_queue(draining, St);
+        true ->
+            St
+    end.
+
+try_clean_queue(Mode, St0 = #{queue := Q0, registry := Registry}) ->
     {{value, Zombie}, Q1} = queue:out(Q0),
     case consuela_registry:try_unregister(Zombie, Registry) of
         {done, ok} ->
@@ -177,7 +198,12 @@ try_clean_queue(St0 = #{queue := Q0, registry := Registry}) ->
             try_force_timer(reset_retry_state(St1));
         {failed, Reason} ->
             _ = beat({{zombie, Zombie}, {reaping, {failed, Reason}}}, St0),
-            start_timer(advance_retry_state(St0))
+            case Mode of
+                regular ->
+                    start_timer(advance_retry_state(St0));
+                draining ->
+                    try_start_timer(St0)
+            end
     end.
 
 try_force_timer(St) ->

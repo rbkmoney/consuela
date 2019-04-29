@@ -354,6 +354,9 @@ try_enqueue_zombie({failed, {Class, _}}, Context, Reg, St) when
 enqueue_zombie(Reg, #{reaper := ReaperRef}) ->
     consuela_zombie_reaper:enqueue(ReaperRef, Reg).
 
+enqueue_zombie(Reg, Opts, #{reaper := ReaperRef}) ->
+    consuela_zombie_reaper:enqueue(ReaperRef, Reg, Opts).
+
 lookup(Ref, Name, Registry) ->
     % Doing local lookup first
     case lookup_local_store(Name, Ref) of
@@ -381,7 +384,7 @@ demonitor_name({_Rid, Name, _Pid} = Reg, St = #{monitors := Monitors}) ->
 handle_down(MRef, Pid, St0 = #{monitors := Monitors}) ->
     #{MRef := Reg = {_Rid, _Name, Pid}} = Monitors,
     % No need to lookup local store, it must be there
-    handle_unregister_known(Reg, St0).
+    handle_unregister_dead(Reg, St0).
 
 handle_unregister_known(Reg, St0) ->
     _ = beat({{unregister, Reg}, started}, St0),
@@ -393,6 +396,14 @@ handle_unregister_known(Reg, St0) ->
             beat({{unregister, Reg}, Result}, St1)
     end,
     St1.
+
+handle_unregister_dead(Reg, St0) ->
+    % Delegate actual deregistration to zombie reaper for now. Nobody would need the result anyway so we can
+    % safely rely on another process. This way any storm of process deaths coming in would not block
+    % registry.
+    ok = enqueue_zombie(Reg, #{drain => true}, St0),
+    ok = remove_local(Reg, St0),
+    demonitor_name(Reg, St0).
 
 %%
 
