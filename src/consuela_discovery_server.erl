@@ -199,7 +199,16 @@ get_service_health(#{service := Service, tags := Tags, client := Client}) ->
     consuela_health:get(Service, Tags, true, Client).
 
 collect_nodes(Hs) ->
-    [mk_nodename(A) || A <- lists:usort([V || #{service := #{endpoint := {V, _}}} <- Hs])].
+    [mk_nodename(Address) ||
+        % > https://www.consul.io/api/catalog.html#serviceaddress
+        % > `ServiceAddress` is the IP address of the service host — if empty, node address should be used
+        Address <- lists:usort([genlib:define(ServiceAddress, NodeAddress) ||
+            #{
+                node    := #{address := NodeAddress},
+                service := #{endpoint := {ServiceAddress, _}}
+            } <- Hs
+        ])
+    ].
 
 try_connect_nodes(St = #{nodes := Nodes}) ->
     _ = genlib_pmap:map(fun (N) -> try_connect_node(N, St) end, Nodes),

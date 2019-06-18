@@ -10,7 +10,7 @@
 -type checkname()   :: binary().
 -type tag()         :: binary().
 -type status()      :: passing | warning | critical.
--type endpoint()    :: {inet:ip_address(), inet:port_number()}.
+-type endpoint()    :: {inet:ip_address() | undefined, inet:port_number()}.
 -type metadata()    :: #{binary() => binary()}.
 -type indexes()     :: #{create | modify => integer()}.
 
@@ -316,6 +316,8 @@ decode_checkname(V) ->
 decode_nodename(V) ->
     decode_string(V).
 
+decode_address(<<>>) ->
+    undefined;
 decode_address(V) ->
     case inet:parse_address(erlang:binary_to_list(V)) of
         {ok, R} ->
