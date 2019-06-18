@@ -27,6 +27,9 @@
 -export([dead_registration_cleaned/1]).
 -export([registrations_select_ok/1]).
 
+-export([unavail_lookup_exits/1]).
+-export([unavail_registration_exits/1]).
+
 %% Pulse
 
 -export([handle_beat/2]).
@@ -47,6 +50,7 @@ all() ->
 groups() ->
     [
         {regular_workflow, [parallel], [
+
             empty_lookup_notfound,
             empty_unregistration_notfound,
             registration_persists,
@@ -55,7 +59,11 @@ groups() ->
             registration_unregistration_succeeds,
             conflicting_unregistration_fails,
             dead_registration_cleaned,
-            registrations_select_ok
+            registrations_select_ok,
+
+            unavail_lookup_exits,
+            unavail_registration_exits
+
         ]}
     ].
 
@@ -74,7 +82,9 @@ groups() ->
     _.
 
 init_per_suite(C) ->
-    Apps = genlib_app:start_application(consuela),
+    Apps =
+        genlib_app:start_application(ranch) ++
+        genlib_app:start_application(consuela),
     ok = ct_consul:await_ready(),
     [{suite_apps, Apps} | C].
 
@@ -82,19 +92,31 @@ end_per_suite(C) ->
     genlib_app:test_application_stop(?config(suite_apps, C)).
 
 init_per_testcase(Name, C) ->
+    {ok, Proxy = #{endpoint := {Host, Port}}} = ct_proxy:start_link({"consul0", 8500}),
     Opts = #{
         nodename  => "consul0",
         namespace => genlib:to_binary(Name),
-        consul    => #{opts => #{pulse => {?MODULE, {client, debug}}}},
+        consul    => #{
+            url   => ["http://", Host, ":", integer_to_list(Port)],
+            opts => #{
+                transport_opts => #{
+                    pool            => false,
+                    connect_timeout => 100,
+                    recv_timeout    => 1000
+                },
+                pulse => {?MODULE, {client, debug}}
+            }
+        },
         keeper    => #{pulse => {?MODULE, {keeper, info}}},
         reaper    => #{pulse => {?MODULE, {reaper, info}}},
         registry  => #{pulse => {?MODULE, {registry, info}}}
     },
     {ok, Pid} = consuela_registry_sup:start_link(Name, Opts),
-    [{registry, Name}, {registry_sup, Pid} | C].
+    [{registry, Name}, {registry_sup, Pid}, {proxy, Proxy}, {testcase, Name} | C].
 
 end_per_testcase(_Name, C) ->
-    consuela_registry_sup:stop(?config(registry_sup, C)).
+    _ = (catch consuela_registry_sup:stop(?config(registry_sup, C))),
+    _ = (catch ct_proxy:stop(?config(proxy, C))).
 
 %% Definitions
 
@@ -107,6 +129,9 @@ end_per_testcase(_Name, C) ->
 -spec conflicting_unregistration_fails(config())     -> _.
 -spec dead_registration_cleaned(config())            -> _.
 -spec registrations_select_ok(config())              -> _.
+
+-spec unavail_lookup_exits(config())                 -> _.
+-spec unavail_registration_exits(config())           -> _.
 
 empty_lookup_notfound(C) ->
     Ref = ?config(registry, C),
@@ -173,6 +198,22 @@ registrations_select_ok(C) ->
     _ = [?assertEqual(ok, stop_slacker(Pid)) || {_, Pid} <- Slackers],
     ok.
 
+unavail_lookup_exits(C) ->
+    Ref = ?config(registry, C),
+    ok = change_proxy_mode(pass, ignore, C),
+    ?assertExit(
+        {consuela, {unknown, {transport_error, timeout}}},
+        lookup(Ref, my_boy)
+    ).
+
+unavail_registration_exits(C) ->
+    Ref = ?config(registry, C),
+    ok = change_proxy_mode(pass, ignore, C),
+    ?assertExit(
+        {consuela, {unknown, timeout}},
+        register(Ref, my_boy, self())
+    ).
+
 spawn_slacker() ->
     erlang:spawn_link(fun () -> receive after infinity -> ok end end).
 
@@ -187,6 +228,12 @@ unregister(Ref, Name, Pid) ->
 
 lookup(Ref, Name) ->
     consuela_registry_server:lookup(Ref, Name).
+
+change_proxy_mode(ModeWas, Mode, C) ->
+    Proxy = ?config(proxy, C),
+    _ = ct:pal(debug, "[~p] setting proxy from '~p' to '~p'", [?config(testcase, C), ModeWas, Mode]),
+    _ = ?assertEqual({ok, ModeWas}, ct_proxy:mode(Proxy, Mode)),
+    ok.
 
 %%
 

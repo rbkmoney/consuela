@@ -46,14 +46,17 @@ new(Namespace, Session, Client) ->
         client    => Client
     }.
 
+-type failure() ::
+    {failed, {failed | unknown, _Reason}}.
+
 -spec try_register(reg(), t()) ->
-    {done, ok | {error, exists}} | {failed, {failed | unknown, _Reason}}.
+    {done, ok | {error, exists}} | {failed, failure()}.
 
 -spec try_unregister(reg(), t()) ->
-    {done, ok} | {failed, {failed | unknown, _Reason}}.
+    {done, ok} | {failed, failure()}.
 
 -spec lookup(name(), t()) ->
-    {ok, pid()} | {error, notfound}.
+    {done, {ok, pid()} | {error, notfound}} | {failed, failure()}.
 
 try_register({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client := Client}) ->
     ID = mk_lock_id(Name, Registry),
@@ -96,15 +99,18 @@ try_unregister({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client :=
 lookup(Name, #{namespace := Namespace, client := Client}) ->
     % TODO
     % Allow to tune read consistency?
-    case consuela_lock:get({Namespace, Name}, Client) of
+    try consuela_lock:get({Namespace, Name}, Client) of
         {ok, #{value := {_Rid, Pid}, session := _}} when is_pid(Pid) ->
             % The lock is still held by some session
-            {ok, Pid};
+            {done, {ok, Pid}};
         {ok, #{value := undefined}} ->
             % The lock was probably released
-            {error, notfound};
+            {done, {error, notfound}};
         {error, notfound} ->
-            {error, notfound}
+            {done, {error, notfound}}
+    catch
+        error:{Class, Reason} when Class == failed; Class == unknown ->
+            {failed, {Class, Reason}}
     end.
 
 mk_lock_id(Name, #{namespace := Namespace}) ->
