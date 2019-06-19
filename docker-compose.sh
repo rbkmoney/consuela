@@ -43,7 +43,7 @@ services:
       agent -server -bootstrap-expect 3 -ui -client 0.0.0.0
 
   discovery0: &discovery
-    image: dr.rbkmoney.com/rbkmoney/build:ee0028263b7663828614e3a01764a836b4018193
+    image: ${BUILD_IMAGE}
     networks:
       - consul
     volumes:
