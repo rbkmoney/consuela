@@ -4,7 +4,7 @@ UTILS_PATH := build-utils
 TEMPLATES_PATH := .
 
 SERVICE_NAME := consuela
-BUILD_IMAGE_TAG := ee0028263b7663828614e3a01764a836b4018193
+BUILD_IMAGE_TAG := 3ff0ac71c353f2f61045ac8ebf72e20ed55b3ec8
 
 CALL_ANYWHERE := all submodules compile xref lint dialyze clean distclean
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test

@@ -109,17 +109,17 @@ register(Ref, Name, Pid) when is_pid(Pid) ->
 unregister(Ref, Name, Pid) when is_pid(Pid) ->
     handle_result(deadline_call(Ref, {unregister, {Name, Pid}}, ?REGISTRATION_ETC, ?REGISTRATION_TIMEOUT)).
 
-handle_result({done, Done}) ->
-    Done;
-handle_result({failed, Error}) ->
-    erlang:exit({consuela, Error}).
-
 -spec lookup(ref(), name()) ->
     {ok, pid()} | {error, notfound}.
 
 lookup(Ref, Name) ->
     Registry = get_cached_value(registry, Ref),
-    lookup(Ref, Name, Registry).
+    handle_result(lookup(Ref, Name, Registry)).
+
+handle_result({done, Done}) ->
+    Done;
+handle_result({failed, Error}) ->
+    erlang:exit({consuela, Error}).
 
 %%
 
@@ -141,7 +141,7 @@ all(Ref) ->
 deadline_call(Ref, Call, ETC, Timeout) when is_integer(ETC), ETC > 0, Timeout > ETC ->
     try gen_server:call(Ref, {deadline_call, compute_call_deadline(ETC, Timeout), Call}, Timeout) catch
         exit:{timeout, _} ->
-            {failed, timeout}
+            {failed, {unknown, timeout}}
     end.
 
 compute_call_deadline(ETC, Timeout) when is_integer(Timeout) ->
@@ -361,7 +361,7 @@ lookup(Ref, Name, Registry) ->
     % Doing local lookup first
     case lookup_local_store(Name, Ref) of
         {ok, Reg} ->
-            {ok, get_reg_pid(Reg)};
+            {done, {ok, get_reg_pid(Reg)}};
         {error, notfound} ->
             consuela_registry:lookup(Name, Registry)
     end.
