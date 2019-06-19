@@ -29,7 +29,7 @@
     {session,
         {renewal,
             {succeeded, session(), deadline()} |
-            {failed, _Reason, [_StackItem]}
+            {failed, _Reason}
         } |
         destroyed |
         expired
