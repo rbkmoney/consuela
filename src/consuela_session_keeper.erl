@@ -145,13 +145,18 @@ code_change(_Vsn, St, _Extra) ->
 
 %%
 
-try_renew_session(St = #{deadline := Deadline}) ->
-    case get_timestamp() of
-        Now when Now < Deadline ->
-            renew_session(St);
-        _ ->
-            _ = beat({session, expired}, St),
-            exit(session_expired)
+try_renew_session(St0 = #{deadline := Deadline}) ->
+    case renew_session(St0) of
+        {succeeded, St} ->
+            St;
+        {failed, St} ->
+            case get_timestamp() of
+                Now when Now < Deadline ->
+                    St;
+                _ ->
+                    _ = beat({session, expired}, St),
+                    exit(session_expired)
+            end
     end.
 
 renew_session(St0 = #{session := #{id := ID}, client := Client}) ->
@@ -160,11 +165,11 @@ renew_session(St0 = #{session := #{id := ID}, client := Client}) ->
             Deadline = compute_deadline(Session),
             St = St0#{session := Session, deadline := Deadline},
             _ = beat({session, {renewal, {succeeded, Session, Deadline}}}, St),
-            St
+            {succeeded, St}
     catch
         error:Reason = {Class, _} when Class == failed; Class == unknown ->
             _ = beat({session, {renewal, {failed, Reason}}}, St0),
-            St0
+            {failed, St0}
     end.
 
 destroy_session(St = #{session := #{id := ID}, client := Client}) ->
