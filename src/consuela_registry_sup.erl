@@ -30,8 +30,9 @@
 }.
 
 -type session_opts() :: #{
-    name => consuela_session:name(), % '{namespace}' by default
-    ttl  => consuela_session:ttl()   % 20 by default
+    name       => consuela_session:name(), % '{namespace}' by default
+    ttl        => consuela_session:ttl(),  % 20 by default
+    lock_delay => consuela_session:delay() % 10 by default
 }.
 
 -export_type([opts/0]).
@@ -98,24 +99,23 @@ mk_consul_client_url(_Nodename, Url) when Url /= undefined ->
 mk_consul_client_url(Nodename, undefined) ->
     genlib:format("http://~s:8500", [Nodename]).
 
--type session_params() :: #{
-    name := consuela_session:name(),
-    node := consuela_session:nodename(),
-    ttl  := consuela_session:ttl()
+-type session_params() :: {
+    consuela_session:name(),
+    consuela_session:nodename(),
+    consuela_session:ttl(),
+    consuela_session:delay()
 }.
 
 -spec mk_session_params(consuela_registry:namespace(), consuela_session:nodename(), session_opts()) ->
     session_params().
 
 mk_session_params(Namespace, Nodename, Opts) ->
-    #{
-        name => maps:get(name, Opts, Namespace),
-        node => Nodename,
-        ttl  => maps:get(ttl, Opts, 20)
-    }.
+    TTL = maps:get(ttl, Opts, 20),
+    Delay = maps:get(lock_delay, Opts, 10),
+    {maps:get(name, Opts, Namespace), Nodename, TTL, Delay}.
 
-mk_session(#{name := Name, node := Node, ttl := TTL}, Client) ->
-    {ok, SessionID} = consuela_session:create(Name, Node, TTL, delete, Client),
+mk_session({Name, Node, TTL, LockDelay}, Client) ->
+    {ok, SessionID} = consuela_session:create(Name, Node, TTL, LockDelay, delete, Client),
     {ok, Session} = consuela_session:get(SessionID, Client),
     Session.
 
