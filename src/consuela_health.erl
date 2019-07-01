@@ -5,30 +5,32 @@
 
 %%
 
--type nodename()    :: inet:hostname().
--type servicename() :: binary().
--type checkname()   :: binary().
--type tag()         :: binary().
--type status()      :: passing | warning | critical.
--type endpoint()    :: {inet:ip_address() | undefined, inet:port_number()}.
--type metadata()    :: #{binary() => binary()}.
--type indexes()     :: #{create | modify => integer()}.
+-type node_name()    :: inet:hostname().
+-type service_id()   :: id().
+-type service_name() :: binary().
+-type check_id()     :: id().
+-type check_name()   :: binary().
+-type tag()          :: binary().
+-type status()       :: passing | warning | critical.
+-type endpoint()     :: {inet:ip_address() | undefined, inet:port_number()}.
+-type metadata()     :: #{binary() => binary()}.
+-type indexes()      :: #{create | modify => integer()}.
 
--type id()          :: binary().
--type uuid()        :: binary().
--type seconds()     :: non_neg_integer().
+-type id()           :: binary().
+-type uuid()         :: binary().
+-type seconds()      :: non_neg_integer().
 
 -type node_() :: #{
     id       := uuid(),
-    name     := nodename(),
+    name     := node_name(),
     address  := inet:ip_address(),
     metadata => metadata(),
     indexes  => indexes()
 }.
 
 -type service() :: #{
-    id       := id(),
-    name     := servicename(),
+    id       := service_id(),
+    name     := service_name(),
     tags     := [tag()],
     endpoint := endpoint(),
     metadata => metadata(),
@@ -36,8 +38,8 @@
 }.
 
 -type check() :: #{
-    id       := id(),
-    name     := checkname(),
+    id       := check_id(),
+    name     := check_name(),
     status   := status(),
     indexes  => indexes()
 }.
@@ -48,8 +50,10 @@
     checks   := [check()]
 }.
 
--export_type([servicename/0]).
--export_type([nodename/0]).
+-export_type([service_id/0]).
+-export_type([service_name/0]).
+-export_type([check_id/0]).
+-export_type([node_name/0]).
 -export_type([tag/0]).
 -export_type([t/0]).
 
@@ -59,7 +63,7 @@
 
 %%
 
--spec get(servicename(), [tag()], boolean(), consuela_client:t()) ->
+-spec get(service_name(), [tag()], boolean(), consuela_client:t()) ->
     {ok, [t()]}.
 
 get(ServiceName, Tags, Passing, Client) ->
@@ -75,16 +79,16 @@ get(ServiceName, Tags, Passing, Client) ->
     end.
 
 -type service_params() :: #{
-    name     := servicename(),
-    id       => id(),
+    name     := service_name(),
+    id       => service_id(),
     tags     := [tag()],
     endpoint := endpoint(),
     checks   => [check_params()]
 }.
 
 -type check_params() :: #{
-    name     := checkname(),
-    id       => id(),
+    name     := check_name(),
+    id       => check_id(),
     type     := {ttl, seconds()}, % TODO | {http, ...}
     initial  => status()
 }.
@@ -102,7 +106,7 @@ register(ServiceParams, Client) ->
             erlang:error(Reason)
     end.
 
--spec deregister(servicename() | id(), consuela_client:t()) ->
+-spec deregister(service_name() | service_id(), consuela_client:t()) ->
     ok | {error, notfound}.
 
 deregister(ServiceNameOrID, Client) ->

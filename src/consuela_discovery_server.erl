@@ -10,7 +10,7 @@
 
 %%
 
--type service()   :: consuela_health:servicename().
+-type service()   :: consuela_health:service_name().
 -type tag()       :: consuela_health:tag().
 -type client()    :: consuela_client:t().
 -type millisecs() :: pos_integer().
@@ -71,7 +71,7 @@ start_link(Name, Tags, Client, Opts) ->
     tags     := [tag()],
     interval := #{init := millisecs(), idle := millisecs()},
     tref     => reference(),
-    nodes    => [consuela_health:nodename()],
+    nodes    => [consuela_health:node_name()],
     client   := client(),
     pulse    := {module(), _PulseOpts}
 }.
