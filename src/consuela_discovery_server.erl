@@ -231,11 +231,16 @@ extract_nodename_prefix(Nodename) ->
 
 handle_node_up(Node, St = #{nodes := Nodes}) ->
     % If we succeeded contacting all nodes known to Consul then the next timer timeout will be _Idle_ ms
-    St#{nodes := Nodes -- [Node]}.
+    St#{nodes := Nodes -- [Node]};
+handle_node_up(_Node, St = #{}) ->
+    % This node may be linked up from another node before our very first discovery
+    St.
 
 handle_node_down(Node, St = #{nodes := Nodes}) ->
     % If we lose any node known earlier then the next timer timeout will be _Init_ ms
-    St#{nodes := lists:usort([Node | Nodes])}.
+    St#{nodes := lists:usort([Node | Nodes])};
+handle_node_down(_Node, St = #{}) ->
+    St.
 
 %%
 
