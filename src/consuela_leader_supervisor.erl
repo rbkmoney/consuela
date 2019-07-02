@@ -53,6 +53,8 @@ start_link(Name, Module, Args, Opts) ->
             {ok, Pid};
         {error, {already_started, Pid}} when is_pid(Pid), node(Pid) /= node() ->
             consuela_leader_warden:start_link(Name, Pid, Opts);
+        {error, {already_started, undefined}} ->
+            consuela_leader_warden:start_link(Name, undefined, Opts);
         {error, Reason} ->
             {error, Reason}
     end.

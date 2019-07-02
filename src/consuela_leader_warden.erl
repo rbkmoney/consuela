@@ -32,7 +32,7 @@
 
 -type beat() ::
     {{warden, name()}, {started | stopped, pid()}} |
-    {{leader, name()}, {down, pid(), _Reason}} |
+    {{leader, name()}, {down, pid() | undefined, _Reason}} |
     {{timer, reference()}, {started, _Msg, timeout()} | fired} |
     {{monitor, reference()}, set | fired} |
     {unexpected, {{call, from()} | cast | info, _Msg}}.
@@ -46,7 +46,7 @@
 
 %%
 
--spec start_link(name(), pid(), opts()) ->
+-spec start_link(name(), pid() | undefined, opts()) ->
     {ok, pid()}.
 
 start_link(Name, LeaderPid, Opts) ->
@@ -59,7 +59,7 @@ start_link(Name, LeaderPid, Opts) ->
 
 -type st() :: #{
     name           := name(),
-    pid            := pid(),
+    pid            := pid() | undefined,
     mref           => reference(),
     retry_strategy := genlib_retry:strategy(),
     retry_state    => genlib_retry:strategy(),
@@ -69,7 +69,7 @@ start_link(Name, LeaderPid, Opts) ->
 
 -type from() :: {pid(), reference()}.
 
--spec mk_state(name(), pid(), opts()) ->
+-spec mk_state(name(), pid() | undefined, opts()) ->
     st().
 
 mk_state(Name, Pid, Opts) ->
@@ -102,7 +102,8 @@ handle_cast(Cast, St) ->
 
 -type info() ::
     {timeout, reference(), remonitor} |
-    {'DOWN', reference(), process, pid(), _Reason}.
+    {'DOWN', reference(), process, pid(), _Reason} |
+    'DOWN'.
 
 -spec handle_info(info(), st()) ->
     {stop, _Reason, st()} | {noreply, st(), hibernate}.
@@ -110,6 +111,8 @@ handle_cast(Cast, St) ->
 handle_info({'DOWN', MRef, process, Pid, Reason}, St) ->
     _ = beat({{monitor, MRef}, fired}, St),
     handle_down(MRef, Pid, Reason, St);
+handle_info('DOWN', St) ->
+    handle_down(undefined, noproc, St);
 handle_info({timeout, TRef, Message}, St) ->
     _ = beat({{timer, TRef}, fired}, St),
     handle_timeout(TRef, Message, St);
@@ -117,12 +120,15 @@ handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
     {noreply, St, hibernate}.
 
--spec handle_down(reference(), pid(), _Reason, st()) ->
+-spec handle_down(reference(), pid() | undefined, _Reason, st()) ->
     {stop, _Reason, st()} | {noreply, st()}.
 
-handle_down(MRef, Pid, Reason, St = #{mref := MRef, name := Name, pid := Pid}) ->
+handle_down(MRef, Pid, Reason, St = #{mref := MRef}) ->
+    handle_down(Pid, Reason, maps:remove(mref, St)).
+
+handle_down(Pid, Reason, St = #{name := Name, pid := Pid}) ->
     _ = beat({{leader, Name}, {down, Pid, Reason}}, St),
-    handle_down(Reason, maps:remove(mref, St)).
+    handle_down(Reason, St).
 
 handle_down(noconnection, St) ->
     handle_node_down(St);
@@ -137,16 +143,18 @@ handle_node_down(St = #{retry_state := Retry}) ->
             handle_process_down(noconnection, St)
     end.
 
-handle_process_down(Reason, St = #{name := Name, pid := Pid}) ->
+handle_process_down(Reason, St = #{name := Name, pid := Pid}) when is_pid(Pid) ->
     try consuela:whereis_name(Name) of
         Pid ->
             handle_process_ghost(Reason, St);
         _ ->
             go_down(Reason, St)
     catch
-        error:{_Class, _Reason} ->
+        exit:{consuela, {_Class, _Reason}} ->
             handle_process_ghost(Reason, St)
-    end.
+    end;
+handle_process_down(Reason, St = #{pid := undefined}) ->
+    handle_process_ghost(Reason, St).
 
 handle_process_ghost(Reason, St = #{retry_state := Retry}) ->
     case genlib_retry:next_step(Retry) of
@@ -195,12 +203,15 @@ code_change(_Vsn, St, _Extra) ->
 
 %%
 
-remonitor(St0 = #{pid := Pid}) ->
+remonitor(St0 = #{pid := Pid}) when is_pid(Pid) ->
     false = maps:is_key(mref, St0),
     MRef = erlang:monitor(process, Pid),
     St1 = St0#{mref => MRef},
     _ = beat({{monitor, MRef}, set}, St1),
-    St1.
+    St1;
+remonitor(St0 = #{pid := undefined}) ->
+    _ = self() ! 'DOWN',
+    St0.
 
 defer_remonitor(Timeout, St) ->
     defer(remonitor, Timeout, St).
