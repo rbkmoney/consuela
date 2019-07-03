@@ -47,15 +47,19 @@
         Reason :: {shutdown, term()} | term().
 
 start_link(Name, Module, Args, Opts) ->
+    _ = logger:notice("~p:~p(~p, ~p, ~P, ~p)", [?MODULE, start_link, Name, Module, Args, 10, Opts], #{}),
     case supervisor:start_link({via, consuela, Name}, Module, Args) of
         {ok, Pid} ->
             _ = beat({{leader, Name}, {started, Pid}}, Opts),
             {ok, Pid};
         {error, {already_started, Pid}} when is_pid(Pid), node(Pid) /= node() ->
+            _ = logger:notice("~p", [{error, {already_started, Pid}}], #{}),
             consuela_leader_warden:start_link(Name, Pid, Opts);
         {error, {already_started, undefined}} ->
+            _ = logger:notice("~p", [{error, {already_started, undefined}}], #{}),
             consuela_leader_warden:start_link(Name, undefined, Opts);
         {error, Reason} ->
+            _ = logger:notice("~p", [{error, Reason}], #{}),
             {error, Reason}
     end.
 
