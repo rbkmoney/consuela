@@ -90,7 +90,7 @@ which_children(Name) ->
 init({Name, ModArgs, Opts}) ->
     St0 = mk_state(Name, ModArgs, Opts),
     _ = beat({{warden, Name}, {started, self()}}, St0),
-    case handle_takeover(St0) of
+    case handle_takeover(reset_retry_state(St0)) of
         {ok, St1} ->
             {ok, St1, hibernate};
         {{error, _} = Error, _St} ->
@@ -135,7 +135,10 @@ handle_info({timeout, TRef, Msg}, St) ->
     noreply(handle_timeout(TRef, Msg, St));
 handle_info({'DOWN', MRef, process, Pid, Reason}, St) ->
     _ = beat({{monitor, MRef}, fired}, St),
-    noreply(handle_leader_down(MRef, Pid, Reason, St)).
+    noreply(handle_leader_down(MRef, Pid, Reason, St));
+handle_info(Msg, St) ->
+    _ = beat({unexpected, {info, Msg}}, St),
+    {noreply, St, hibernate}.
 
 -spec noreply
     ({ok, st()}) ->
