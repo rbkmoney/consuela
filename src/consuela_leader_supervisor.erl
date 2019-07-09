@@ -11,6 +11,12 @@
 
 -module(consuela_leader_supervisor).
 
+%%% TODO
+%%% Strictly speaking nothing obliges us to require supervisor-like module as an underlying behaviour anymore.
+%%% We need at least gen_server behaviour which is more generic. Moreover implementation would be less
+%%% _hackish_ that way because we already abuse _supervisor-is-a-gen-server_ internal details and we would not
+%%% need to no more.
+
 %%
 
 -type name() :: consuela_registry:name().
