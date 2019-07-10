@@ -13,9 +13,12 @@
 
 %%
 
+-type nodename() :: consuela_session:nodename().
+-type namespace() :: consuela_registry:namespace().
+
 -type opts() :: #{
-    nodename  := consuela_session:nodename(),
-    namespace := consuela_registry:namespace(),
+    nodename  := nodename(),
+    namespace := namespace(),
     consul    => consul_opts(),
     session   => session_opts(),
     keeper    => consuela_session_keeper:opts(), % #{} by default
@@ -31,6 +34,7 @@
 
 -type session_opts() :: #{
     name       => consuela_session:name(), % '{namespace}' by default
+    presence   => consuela_presence_session:name(), % which checks to associate
     ttl        => consuela_session:ttl(),  % 20 by default
     lock_delay => consuela_session:delay() % 10 by default
 }.
@@ -54,11 +58,10 @@ start_link(Ref, Opts) ->
     Nodename     = maps:get(nodename, Opts),
     Namespace    = maps:get(namespace, Opts),
     Client       = mk_consul_client(Nodename, maps:get(consul, Opts, #{})),
-    SessionOpts  = mk_session_params(Namespace, Nodename, maps:get(session, Opts, #{})),
     KeeperOpts   = maps:get(keeper, Opts, #{}),
     ReaperOpts   = maps:get(reaper, Opts, #{}),
     RegistryOpts = maps:get(registry, Opts, #{}),
-    Session      = mk_session(SessionOpts, Client),
+    Session      = mk_session(Namespace, Nodename, Client, maps:get(session, Opts, #{})),
     Registry     = consuela_registry:new(Namespace, Session, Client),
     {ok, Pid} = supervisor:start_link(?MODULE, []),
     {ok, _KeeperPid} = supervisor:start_child(
@@ -99,23 +102,23 @@ mk_consul_client_url(_Nodename, Url) when Url /= undefined ->
 mk_consul_client_url(Nodename, undefined) ->
     genlib:format("http://~s:8500", [Nodename]).
 
--type session_params() :: {
-    consuela_session:name(),
-    consuela_session:nodename(),
-    consuela_session:ttl(),
-    consuela_session:delay()
-}.
+-spec mk_session(namespace(), nodename(), consuela_client:t(), session_opts()) ->
+    consuela_session:t().
 
--spec mk_session_params(consuela_registry:namespace(), consuela_session:nodename(), session_opts()) ->
-    session_params().
-
-mk_session_params(Namespace, Nodename, Opts) ->
+mk_session(Namespace, Node, Client, Opts) ->
+    Name = maps:get(name, Opts, Namespace),
     TTL = maps:get(ttl, Opts, 20),
-    Delay = maps:get(lock_delay, Opts, 10),
-    {maps:get(name, Opts, Namespace), Nodename, TTL, Delay}.
-
-mk_session({Name, Node, TTL, LockDelay}, Client) ->
-    {ok, SessionID} = consuela_session:create(Name, Node, TTL, LockDelay, delete, Client),
+    Opts0 = #{
+        behavior   => delete,
+        lock_delay => maps:get(lock_delay, Opts, 10)
+    },
+    Opts1 = case maps:find(presence, Opts) of
+        {ok, Name} ->
+            Opts0#{checks => [consuela_presence_session:get_check_id(Name)]};
+        error ->
+            Opts0
+    end,
+    {ok, SessionID} = consuela_session:create(Name, Node, TTL, Opts1, Client),
     {ok, Session} = consuela_session:get(SessionID, Client),
     Session.
 
