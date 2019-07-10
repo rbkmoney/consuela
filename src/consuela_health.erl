@@ -188,9 +188,9 @@ encode_checks(V) when is_list(V) ->
 encode_check_params(#{name := Name, type := Type} = V) ->
     maps:merge(
         #{
-            <<"Name">>   => encode_servicename(Name),
-            <<"ID">>     => encode_binary(maps:get(id, V, Name)),
-            <<"Status">> => encode_status(maps:get(initial, V, critical))
+            <<"CheckID">> => encode_binary(maps:get(id, V, Name)),
+            <<"Name">>    => encode_servicename(Name),
+            <<"Status">>  => encode_status(maps:get(initial, V, critical))
         },
         encode_check_type(Type)
     ).

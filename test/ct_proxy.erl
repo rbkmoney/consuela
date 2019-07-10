@@ -2,6 +2,7 @@
 
 -export([start_link/1]).
 -export([start_link/2]).
+-export([unlink/1]).
 -export([mode/2]).
 -export([stop/1]).
 
@@ -38,6 +39,9 @@
 -spec start_link(endpoint(), ranch_tcp:opts()) ->
     {ok, proxy()}.
 
+-spec unlink(proxy()) ->
+    proxy().
+
 start_link(Upstream) ->
     start_link(Upstream, [{ip, {127, 0, 0, 1}}]).
 
@@ -69,6 +73,10 @@ start_link(Upstream, SocketOpts) ->
 resolve_endpoint({Host, Port}) ->
     {ok, #hostent{h_addr_list = [Address | _Rest]}} = inet:gethostbyname(Host),
     {Address, Port}.
+
+unlink(Proxy = #{supervisor := SupPid}) ->
+    true = erlang:unlink(SupPid),
+    Proxy.
 
 -spec mode(proxy(), mode()) ->
     {ok, mode()}.

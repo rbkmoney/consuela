@@ -113,8 +113,8 @@ mk_session(Namespace, Node, Client, Opts) ->
         lock_delay => maps:get(lock_delay, Opts, 10)
     },
     Opts1 = case maps:find(presence, Opts) of
-        {ok, Name} ->
-            Opts0#{checks => [consuela_presence_session:get_check_id(Name)]};
+        {ok, Presence} ->
+            Opts0#{checks => [consuela_presence_session:get_check_id(Presence)]};
         error ->
             Opts0
     end,

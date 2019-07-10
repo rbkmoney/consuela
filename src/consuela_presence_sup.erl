@@ -20,6 +20,7 @@
 }.
 
 -export([start_link/1]).
+-export([stop/1]).
 
 -export_type([opts/0]).
 
@@ -58,6 +59,12 @@ start_link(Opts) ->
 mk_consul_client(Opts) ->
     Url = maps:get(url, Opts),
     consuela_client:new(Url, maps:get(opts, Opts, #{})).
+
+-spec stop(pid()) ->
+    ok.
+
+stop(Pid) ->
+    proc_lib:stop(Pid).
 
 %%
 
