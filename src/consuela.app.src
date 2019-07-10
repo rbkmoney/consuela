@@ -9,7 +9,8 @@
         jsx,
         hackney,
         cowlib,
-        genlib
+        genlib,
+        ranch
     ]},
     {env, []},
     {modules, []},
