@@ -16,10 +16,23 @@ start_link() ->
     genlib_adhoc_supervisor:start_link(
         #{strategy => one_for_one, intensity => 0, period => 1},
         lists:append([
+            mk_presence_childspec(genlib_app:env(consuela, presence)),
             mk_discovery_childspec(genlib_app:env(consuela, discovery)),
             mk_registry_childspec(genlib_app:env(consuela, registry))
         ])
     ).
+
+-spec mk_presence_childspec(consuela_presence_sup:opts() | undefined) ->
+    [supervisor:child_spec()].
+
+mk_presence_childspec(Opts = #{}) ->
+    [#{
+        id    => presence,
+        start => {consuela_presence_sup, start_link, [Opts]},
+        type  => supervisor
+    }];
+mk_presence_childspec(undefined) ->
+    [].
 
 -spec mk_discovery_childspec(consuela_discovery_sup:opts() | undefined) ->
     [supervisor:child_spec()].
