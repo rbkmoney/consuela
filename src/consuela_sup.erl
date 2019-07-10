@@ -27,7 +27,7 @@ start_link() ->
 mk_discovery_childspec(Opts = #{}) ->
     [#{
         id    => discovery,
-        start => {consuela_discovery_sup, start_link, [discovery, Opts]},
+        start => {consuela_discovery_sup, start_link, [Opts]},
         type  => supervisor
     }];
 mk_discovery_childspec(undefined) ->
