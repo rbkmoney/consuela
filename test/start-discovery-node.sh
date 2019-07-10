@@ -7,7 +7,7 @@ LIFETIME=${3:-90}
 COOKIE=${4:-${NODENAME}}
 
 SCRIPT=$(cat <<END
-    discovery_node_runner:run(<<"${NODENAME}">>, "${HOSTNAME}", "http://${CONSUL}:8500", ${LIFETIME}).
+    discovery_node_runner:run(<<"${NODENAME}">>, "http://${CONSUL}:8500", ${LIFETIME}).
 END
 )
 
