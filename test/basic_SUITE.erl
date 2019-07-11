@@ -103,7 +103,7 @@ init_per_suite(C) ->
         genlib_app:start_application(consuela),
     ok = ct_consul:await_ready(),
     Consul = #{
-        url   => "http://consul0:8500",
+        url  => "http://consul0:8500",
         opts => #{
             pulse => {?MODULE, {client, debug}}
         }
@@ -161,6 +161,7 @@ init_per_testcase(Name, C) ->
     [{registry, Name}, {registry_sup, Pid}, {testcase, Name} | C].
 
 end_per_testcase(_Name, C) ->
+    catch change_proxy_mode(pass, C),
     catch consuela_registry_sup:stop(?config(registry_sup, C)).
 
 %% Definitions
