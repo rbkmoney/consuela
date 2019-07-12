@@ -141,7 +141,9 @@ all(Ref) ->
 deadline_call(Ref, Call, ETC, Timeout) when is_integer(ETC), ETC > 0, Timeout > ETC ->
     try gen_server:call(Ref, {deadline_call, compute_call_deadline(ETC, Timeout), Call}, Timeout) catch
         exit:{timeout, _} ->
-            {failed, {unknown, timeout}}
+            {failed, {unknown, timeout}};
+        exit:{noproc, _} ->
+            {failed, registry_terminated}
     end.
 
 compute_call_deadline(ETC, Timeout) when is_integer(Timeout) ->
@@ -460,7 +462,13 @@ cache_value(Name, Value, #{cache := Tid}) ->
     ok.
 
 get_cached_value(Name, Ref) ->
-    ets:lookup_element(mk_cache_tid(Ref), Name, 2).
+    Tid = mk_cache_tid(Ref),
+    case ets:info(Tid, name) of
+        Tid ->
+            ets:lookup_element(mk_cache_tid(Ref), Name, 2);
+        undefined ->
+            erlang:exit({consuela, registry_terminated})
+    end.
 
 %%
 
