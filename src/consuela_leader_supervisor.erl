@@ -81,27 +81,26 @@ which_children(Name) ->
 -type st() :: #{
     name           := name(),
     modargs        := modargs(_),
-    state          := {handoff, _SupervisorSt} | takeover | {monitor, pid(), reference()},
+    state          := takeover | {monitor, pid(), reference()},
+    context        := init | handle,
     retry_strategy := genlib_retry:strategy(),
     retry_state    => genlib_retry:strategy(),
     tref           => reference(),
     pulse          := {module(), _PulseOpts}
 }.
 
+-type gen_state() :: {?MODULE, st()} | _SupervisorSt.
+
 -spec init({name(), modargs(_), opts()}) ->
-    {ok, _SupervisorSt | st()} |
-    {ok, _SupervisorSt | st(), timeout() | hibernate} |
+    {ok, gen_state()} |
+    {ok, gen_state(), timeout() | hibernate} |
+    {stop, _Reason} |
     ignore.
 
 init({Name, ModArgs, Opts}) ->
-    St0 = mk_state(Name, ModArgs, Opts),
-    _ = beat({{warden, Name}, {started, self()}}, St0),
-    case handle_takeover(reset_retry_state(St0)) of
-        {ok, St1} ->
-            {ok, St1, hibernate};
-        {{error, _} = Error, _St} ->
-            {stop, Error}
-    end.
+    St = mk_state(Name, ModArgs, Opts),
+    _ = beat({{warden, Name}, {started, self()}}, St),
+    handle_takeover(reset_retry_state(St)).
 
 -spec mk_state(name(), modargs(_), opts()) ->
     st().
@@ -111,59 +110,81 @@ mk_state(Name, ModArgs, Opts) ->
         name           => Name,
         modargs        => ModArgs,
         state          => takeover,
+        context        => init,
         pulse          => maps:get(pulse, Opts, {?MODULE, []}),
         retry_strategy => maps:get(retry, Opts, genlib_retry:linear({max_total_timeout, 30 * 1000}, 5000))
     }.
 
--spec handle_call(_Call, from(), st()) ->
-    {noreply, st(), hibernate}.
+-spec handle_call(_Call, from(), gen_state()) ->
+    {reply, _Reply, gen_state()} |
+    {reply, _Reply, gen_state(), timeout() | hibernate} |
+    {noreply, gen_state()} |
+    {noreply, gen_state(), timeout() | hibernate} |
+    {stop, _Reason, gen_state()}.
 
-handle_call(Call, From, St) ->
+handle_call(Call, From, {?MODULE, St}) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
-    {noreply, St, hibernate}.
+    ok(St);
+handle_call(Call, From, SupervisorSt) ->
+    supervisor:handle_call(Call, From, SupervisorSt).
 
--spec handle_cast(_Cast, st()) ->
-    {noreply, st(), hibernate}.
+-spec handle_cast(_Cast, gen_state()) ->
+    {noreply, gen_state()} |
+    {noreply, gen_state(), timeout() | hibernate} |
+    {stop, _Reason, gen_state()}.
 
-handle_cast(Cast, St) ->
+handle_cast(Cast, {?MODULE, St}) ->
     _ = beat({unexpected, {cast, Cast}}, St),
-    {noreply, St, hibernate}.
+    ok(St);
+handle_cast(Cast, SupervisorSt) ->
+    supervisor:handle_cast(Cast, SupervisorSt).
 
 -type info() ::
-    {timeout, reference(), takeover | handoff} |
+    {timeout, reference(), takeover} |
     {'DOWN', reference(), process, pid(), _Reason}.
 
--spec handle_info(info(), st()) ->
-    {noreply, st(), hibernate}.
+-spec handle_info(info() | _SupervisorMsg, gen_state()) ->
+    {noreply, gen_state()} |
+    {noreply, gen_state(), timeout() | hibernate} |
+    {stop, _Reason, gen_state()}.
 
-handle_info({timeout, TRef, Msg}, St) ->
+handle_info(Msg, {?MODULE, LSt}) ->
+    handle_leadersup_info(Msg, LSt);
+handle_info(Msg, SupervisorSt) ->
+    supervisor:handle_info(Msg, SupervisorSt).
+
+handle_leadersup_info({timeout, TRef, Msg}, St) ->
     _ = beat({{timer, TRef}, fired}, St),
-    noreply(handle_timeout(TRef, Msg, St));
-handle_info({'DOWN', MRef, process, Pid, Reason}, St) ->
+    handle_timeout(TRef, Msg, St);
+handle_leadersup_info({'DOWN', MRef, process, Pid, Reason}, St) ->
     _ = beat({{monitor, MRef}, fired}, St),
-    noreply(handle_leader_down(MRef, Pid, Reason, St));
-handle_info(Msg, St) ->
+    handle_leader_down(MRef, Pid, Reason, St);
+handle_leadersup_info(Msg, St) ->
     _ = beat({unexpected, {info, Msg}}, St),
-    {noreply, St, hibernate}.
+    ok(St).
 
--spec noreply
-    ({ok, st()}) ->
-        {noreply, st(), hibernate};
-    ({{error, Reason}, st()}) ->
-        {stop, {error, Reason}, st()}.
+-spec ok(st()) ->
+    {ok | noreply, st(), hibernate}.
 
-noreply({ok, St}) ->
-    {noreply, St, hibernate};
-noreply({{error, _} = Error, St}) ->
-    {stop, Error, St}.
+ok(St = #{context := init}) ->
+    {ok, {?MODULE, St#{context := handle}}, hibernate};
+ok(St = #{context := handle}) ->
+    {noreply, {?MODULE, St}, hibernate}.
+
+-spec stop(Reason, st()) ->
+    {stop, Reason} |
+    {stop, Reason, st()}.
+
+stop(Reason, _St = #{context := init}) ->
+    {stop, Reason};
+stop(Reason, St = #{context := handle}) ->
+    {stop, Reason, {?MODULE, St}}.
 
 handle_timeout(TRef, Msg, St = #{tref := TRef}) ->
     handle_timeout(Msg, maps:remove(tref, St)).
 
 handle_timeout(takeover, St) ->
-    handle_takeover(St);
-handle_timeout(handoff, St) ->
-    handle_handoff(St).
+    handle_takeover(St).
 
 handle_takeover(St = #{state := takeover, name := Name}) ->
     try
@@ -174,7 +195,7 @@ handle_takeover(St = #{state := takeover, name := Name}) ->
             no ->
                 case consuela:whereis_name(Name) of
                     Pid when is_pid(Pid), node(Pid) /= node() ->
-                        {ok, start_monitor(Pid, reset_retry_state(St))};
+                        ok(start_monitor(Pid, reset_retry_state(St)));
                     _ ->
                         % Smells like _lock-delay_ scenario.
                         defer_takeover(St)
@@ -185,9 +206,6 @@ handle_takeover(St = #{state := takeover, name := Name}) ->
             % Consul is unstable
             defer_takeover(St)
     end.
-
-handle_handoff(#{state := {handoff, SupervisorSt}, name := Name}) ->
-    gen_server:enter_loop(supervisor, [], SupervisorSt, mk_reg_name(Name)).
 
 handle_leader_down(MRef, Pid, Reason, St0 = #{state := {monitor, Pid, MRef}, name := Name}) ->
     _ = beat({{leader, Name}, {down, Pid, Reason}}, St0),
@@ -219,23 +237,25 @@ start_monitor(Pid, St0 = #{state := takeover}) ->
     _ = beat({{monitor, MRef}, set}, St1),
     St1.
 
-handoff(St = #{state := takeover, name := Name, modargs := {Module, Args}}) ->
+handoff(St = #{state := takeover, context := Ctx, name := Name, modargs := {Module, Args}}) ->
     % TODO less confusing beats
     _ = beat({{warden, Name}, {stopped, self()}}, St),
     RegName = mk_reg_name(Name),
     case supervisor:init({RegName, Module, Args}) of
         {ok, SupervisorSt} ->
             _ = beat({{leader, Name}, {started, self()}}, St),
-            defer_handoff(St#{state => {handoff, SupervisorSt}});
+            case Ctx of
+                init ->
+                    {ok, SupervisorSt};
+                handle ->
+                    {noreply, SupervisorSt}
+            end;
         {stop, Reason} ->
-            {{error, Reason}, St}
+            stop(Reason, St)
     end.
 
 defer_takeover(St) ->
     defer(takeover, St).
-
-defer_handoff(St) ->
-    defer(handoff, 0, St).
 
 defer(Message, St = #{name := Name, retry_state := RetrySt0}) ->
     false = maps:is_key(tref, St),
@@ -244,7 +264,7 @@ defer(Message, St = #{name := Name, retry_state := RetrySt0}) ->
             defer(Message, Timeout, St#{retry_state := RetrySt1});
         finish ->
             _ = beat({{warden, Name}, {stopped, self()}}, St),
-            {{error, retries_exhausted}, St}
+            stop({error, retries_exhausted}, St)
     end.
 
 defer(Message, Timeout, St0) ->
@@ -252,7 +272,7 @@ defer(Message, Timeout, St0) ->
     TRef = consuela_timer:start(Timeout, Message),
     St1 = St0#{tref => TRef},
     _ = beat({{timer, TRef}, {started, Message, Timeout}}, St1),
-    {ok, St1}.
+    ok(St1).
 
 reset_retry_state(St0 = #{retry_strategy := Retry}) ->
     St0#{retry_state => Retry}.
