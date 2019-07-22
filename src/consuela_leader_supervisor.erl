@@ -164,7 +164,7 @@ handle_leadersup_info(Msg, St) ->
     ok(St).
 
 -spec ok(st()) ->
-    {ok | noreply, st(), hibernate}.
+    {ok | noreply, gen_state(), hibernate}.
 
 ok(St = #{context := init}) ->
     {ok, {?MODULE, St#{context := handle}}, hibernate};
@@ -173,7 +173,7 @@ ok(St = #{context := handle}) ->
 
 -spec stop(Reason, st()) ->
     {stop, Reason} |
-    {stop, Reason, st()}.
+    {stop, Reason, gen_state()}.
 
 stop(Reason, _St = #{context := init}) ->
     {stop, Reason};
