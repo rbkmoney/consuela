@@ -465,7 +465,7 @@ get_cached_value(Name, Ref) ->
     Tid = mk_cache_tid(Ref),
     case ets:info(Tid, name) of
         Tid ->
-            ets:lookup_element(mk_cache_tid(Ref), Name, 2);
+            ets:lookup_element(Tid, Name, 2);
         undefined ->
             erlang:exit({consuela, registry_terminated})
     end.
