@@ -37,6 +37,7 @@
 %% gen server lookalike
 
 -export([init/1]).
+-export([handle_continue/2]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
 -export([handle_info/2]).
@@ -81,7 +82,7 @@ which_children(Name) ->
 -type st() :: #{
     name           := name(),
     modargs        := modargs(_),
-    state          := takeover | {monitor, pid(), reference()},
+    state          := {handoff, _SupervisorSt} | takeover | {monitor, pid(), reference()},
     context        := init | handle,
     retry_strategy := genlib_retry:strategy(),
     retry_state    => genlib_retry:strategy(),
@@ -89,11 +90,9 @@ which_children(Name) ->
     pulse          := {module(), _PulseOpts}
 }.
 
--type gen_state() :: {?MODULE, st()} | _SupervisorSt.
-
 -spec init({name(), modargs(_), opts()}) ->
-    {ok, gen_state()} |
-    {ok, gen_state(), timeout() | hibernate} |
+    {ok, st() | _SupervisorSt} |
+    {ok, st() | _SupervisorSt, timeout() | {continue, _} | hibernate} |
     {stop, _Reason} |
     ignore.
 
@@ -115,70 +114,60 @@ mk_state(Name, ModArgs, Opts) ->
         retry_strategy => maps:get(retry, Opts, genlib_retry:linear({max_total_timeout, 30 * 1000}, 5000))
     }.
 
--spec handle_call(_Call, from(), gen_state()) ->
-    {reply, _Reply, gen_state()} |
-    {reply, _Reply, gen_state(), timeout() | hibernate} |
-    {noreply, gen_state()} |
-    {noreply, gen_state(), timeout() | hibernate} |
-    {stop, _Reason, gen_state()}.
+-spec handle_continue(handoff, st()) ->
+    no_return().
 
-handle_call(Call, From, {?MODULE, St}) ->
+handle_continue(handoff, St) ->
+    finish_handoff(St).
+
+-spec handle_call(_Call, from(), st()) ->
+    {noreply, st(), hibernate}.
+
+handle_call(Call, From, St) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
-    ok(St);
-handle_call(Call, From, SupervisorSt) ->
-    supervisor:handle_call(Call, From, SupervisorSt).
+    {noreply, St, hibernate}.
 
--spec handle_cast(_Cast, gen_state()) ->
-    {noreply, gen_state()} |
-    {noreply, gen_state(), timeout() | hibernate} |
-    {stop, _Reason, gen_state()}.
+-spec handle_cast(_Cast, st()) ->
+    {noreply, st(), hibernate}.
 
-handle_cast(Cast, {?MODULE, St}) ->
+handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
-    ok(St);
-handle_cast(Cast, SupervisorSt) ->
-    supervisor:handle_cast(Cast, SupervisorSt).
+    {noreply, St, hibernate}.
 
 -type info() ::
     {timeout, reference(), takeover} |
     {'DOWN', reference(), process, pid(), _Reason}.
 
--spec handle_info(info() | _SupervisorMsg, gen_state()) ->
-    {noreply, gen_state()} |
-    {noreply, gen_state(), timeout() | hibernate} |
-    {stop, _Reason, gen_state()}.
+-spec handle_info(info(), st()) ->
+    {noreply, st(), hibernate} |
+    {stop, _Reason, st()}.
 
-handle_info(Msg, {?MODULE, LSt}) ->
-    handle_leadersup_info(Msg, LSt);
-handle_info(Msg, SupervisorSt) ->
-    supervisor:handle_info(Msg, SupervisorSt).
-
-handle_leadersup_info({timeout, TRef, Msg}, St) ->
+handle_info({timeout, TRef, Msg}, St) ->
     _ = beat({{timer, TRef}, fired}, St),
     handle_timeout(TRef, Msg, St);
-handle_leadersup_info({'DOWN', MRef, process, Pid, Reason}, St) ->
+handle_info({'DOWN', MRef, process, Pid, Reason}, St) ->
     _ = beat({{monitor, MRef}, fired}, St),
     handle_leader_down(MRef, Pid, Reason, St);
-handle_leadersup_info(Msg, St) ->
+handle_info(Msg, St) ->
     _ = beat({unexpected, {info, Msg}}, St),
     ok(St).
 
 -spec ok(st()) ->
-    {ok | noreply, gen_state(), hibernate}.
+    {ok | noreply, st(), hibernate}.
 
 ok(St = #{context := init}) ->
-    {ok, {?MODULE, St#{context := handle}}, hibernate};
+    {ok, St#{context := handle}, hibernate};
 ok(St = #{context := handle}) ->
-    {noreply, {?MODULE, St}, hibernate}.
+    {noreply, St, hibernate}.
 
 -spec stop(Reason, st()) ->
     {stop, Reason} |
-    {stop, Reason, gen_state()}.
+    {stop, Reason, st()}.
 
 stop(Reason, _St = #{context := init}) ->
     {stop, Reason};
 stop(Reason, St = #{context := handle}) ->
-    {stop, Reason, {?MODULE, St}}.
+    {stop, Reason, St}.
 
 handle_timeout(TRef, Msg, St = #{tref := TRef}) ->
     handle_timeout(Msg, maps:remove(tref, St)).
@@ -244,15 +233,19 @@ handoff(St = #{state := takeover, context := Ctx, name := Name, modargs := {Modu
     case supervisor:init({RegName, Module, Args}) of
         {ok, SupervisorSt} ->
             _ = beat({{leader, Name}, {started, self()}}, St),
+            St1 = St#{state => {handoff, SupervisorSt}},
             case Ctx of
                 init ->
-                    {ok, SupervisorSt};
+                    {ok, St1, {continue, handoff}};
                 handle ->
-                    {noreply, SupervisorSt}
+                    finish_handoff(St1)
             end;
         {stop, Reason} ->
             stop(Reason, St)
     end.
+
+finish_handoff(#{state := {handoff, SupervisorSt}, name := Name}) ->
+    gen_server:enter_loop(supervisor, [], SupervisorSt, mk_reg_name(Name)).
 
 defer_takeover(St) ->
     defer(takeover, St).
