@@ -12,7 +12,7 @@
 
 -type timer_ref() :: reference().
 
--spec start(_Timeout :: pos_integer(), _Msg) ->
+-spec start(_Timeout :: non_neg_integer(), _Msg) ->
     timer_ref().
 
 start(Timeout, Msg) ->
