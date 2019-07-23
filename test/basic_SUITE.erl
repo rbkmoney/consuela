@@ -29,6 +29,7 @@
 
 -export([unavail_lookup_exits/1]).
 -export([unavail_registration_exits/1]).
+-export([no_registry_exits/1]).
 
 %% Pulse
 
@@ -62,7 +63,8 @@ groups() ->
             registrations_select_ok,
 
             unavail_lookup_exits,
-            unavail_registration_exits
+            unavail_registration_exits,
+            no_registry_exits
 
         ]}
     ].
@@ -132,6 +134,7 @@ end_per_testcase(_Name, C) ->
 
 -spec unavail_lookup_exits(config())                 -> _.
 -spec unavail_registration_exits(config())           -> _.
+-spec no_registry_exits(config())                    -> _.
 
 empty_lookup_notfound(C) ->
     Ref = ?config(registry, C),
@@ -213,6 +216,12 @@ unavail_registration_exits(C) ->
         {consuela, {unknown, timeout}},
         register(Ref, my_boy, self())
     ).
+
+no_registry_exits(_C) ->
+    Ref = '$no_way_this_registry_exists',
+    _ = ?assertExit({consuela, registry_terminated}, register(Ref, my_boy, self())),
+    _ = ?assertExit({consuela, registry_terminated}, unregister(Ref, my_boy, self())),
+    _ = ?assertExit({consuela, registry_terminated}, lookup(Ref, my_boy)).
 
 spawn_slacker() ->
     erlang:spawn_link(fun () -> receive after infinity -> ok end end).
