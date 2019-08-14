@@ -14,6 +14,8 @@
 -export([groups/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
+-export([init_per_group/2]).
+-export([end_per_group/2]).
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
@@ -42,7 +44,9 @@
 
 all() ->
     [
-        {group, regular_workflow}
+        {group, regular_workflow},
+        {group, proper_exceptions},
+        {group, presence_workflow}
     ].
 
 -spec groups() ->
@@ -50,8 +54,8 @@ all() ->
 
 groups() ->
     [
-        {regular_workflow, [parallel], [
 
+        {regular_workflow, [parallel], [
             empty_lookup_notfound,
             empty_unregistration_notfound,
             registration_persists,
@@ -60,13 +64,19 @@ groups() ->
             registration_unregistration_succeeds,
             conflicting_unregistration_fails,
             dead_registration_cleaned,
-            registrations_select_ok,
+            registrations_select_ok
+        ]},
 
+        {proper_exceptions, [], [
             unavail_lookup_exits,
             unavail_registration_exits,
             no_registry_exits
+        ]},
 
+        {presence_workflow, [], [
+            {group, regular_workflow}
         ]}
+
     ].
 
 %% Startup / shutdown
@@ -75,6 +85,12 @@ groups() ->
     config().
 
 -spec end_per_suite(config()) ->
+    _.
+
+-spec init_per_group(group_name(), config()) ->
+    config().
+
+-spec end_per_group(group_name(), config()) ->
     _.
 
 -spec init_per_testcase(test_name(), config()) ->
@@ -88,37 +104,67 @@ init_per_suite(C) ->
         genlib_app:start_application(ranch) ++
         genlib_app:start_application(consuela),
     ok = ct_consul:await_ready(),
-    [{suite_apps, Apps} | C].
+    Consul = #{
+        url  => "http://consul0:8500",
+        opts => #{
+            pulse => {?MODULE, {client, debug}}
+        }
+    },
+    [{suite_apps, Apps}, {consul, Consul} | C].
 
 end_per_suite(C) ->
     genlib_app:test_application_stop(?config(suite_apps, C)).
 
-init_per_testcase(Name, C) ->
+init_per_group(proper_exceptions, C) ->
     {ok, Proxy = #{endpoint := {Host, Port}}} = ct_proxy:start_link({"consul0", 8500}),
+    Consul = #{
+        url   => ["http://", Host, ":", integer_to_list(Port)],
+        opts => #{
+            transport_opts => #{
+                pool            => false,
+                connect_timeout => 100,
+                recv_timeout    => 1000
+            },
+            pulse => {?MODULE, {client, debug}}
+        }
+    },
+    [{proxy, ct_proxy:unlink(Proxy)}, {consul, Consul} | C];
+init_per_group(presence_workflow, C) ->
+    Name = <<?MODULE_STRING>>,
+    Opts = #{
+        name         => Name,
+        consul       => ?config(consul, C),
+        server_opts  => #{pulse => {?MODULE, {presence_server, info}}},
+        session_opts => #{pulse => {?MODULE, {presence_session, info}}}
+    },
+    {ok, Pid} = consuela_presence_sup:start_link(Opts),
+    [{session, #{presence => Name}}, {presence_sup, ct_helper:unlink(Pid)} | C];
+init_per_group(_, C) ->
+    C.
+
+end_per_group(proper_exceptions, C) ->
+    ct_proxy:stop(?config(proxy, C));
+end_per_group(presence_workflow, C) ->
+    consuela_presence_sup:stop(?config(presence_sup, C));
+end_per_group(_, _C) ->
+    ok.
+
+init_per_testcase(Name, C) ->
     Opts = #{
         nodename  => "consul0",
         namespace => genlib:to_binary(Name),
-        consul    => #{
-            url   => ["http://", Host, ":", integer_to_list(Port)],
-            opts => #{
-                transport_opts => #{
-                    pool            => false,
-                    connect_timeout => 100,
-                    recv_timeout    => 1000
-                },
-                pulse => {?MODULE, {client, debug}}
-            }
-        },
+        consul    => ?config(consul, C),
+        session   => proplists:get_value(session, C, #{}),
         keeper    => #{pulse => {?MODULE, {keeper, info}}},
         reaper    => #{pulse => {?MODULE, {reaper, info}}},
         registry  => #{pulse => {?MODULE, {registry, info}}}
     },
     {ok, Pid} = consuela_registry_sup:start_link(Name, Opts),
-    [{registry, Name}, {registry_sup, Pid}, {proxy, Proxy}, {testcase, Name} | C].
+    [{registry, Name}, {registry_sup, Pid}, {testcase, Name} | C].
 
 end_per_testcase(_Name, C) ->
-    _ = (catch consuela_registry_sup:stop(?config(registry_sup, C))),
-    _ = (catch ct_proxy:stop(?config(proxy, C))).
+    catch change_proxy_mode(pass, C),
+    catch consuela_registry_sup:stop(?config(registry_sup, C)).
 
 %% Definitions
 
@@ -203,7 +249,7 @@ registrations_select_ok(C) ->
 
 unavail_lookup_exits(C) ->
     Ref = ?config(registry, C),
-    ok = change_proxy_mode(pass, ignore, C),
+    ok = change_proxy_mode(ignore, C),
     ?assertExit(
         {consuela, {unknown, {transport_error, timeout}}},
         lookup(Ref, my_boy)
@@ -211,7 +257,7 @@ unavail_lookup_exits(C) ->
 
 unavail_registration_exits(C) ->
     Ref = ?config(registry, C),
-    ok = change_proxy_mode(pass, ignore, C),
+    ok = change_proxy_mode(ignore, C),
     ?assertExit(
         {consuela, {unknown, timeout}},
         register(Ref, my_boy, self())
@@ -238,10 +284,10 @@ unregister(Ref, Name, Pid) ->
 lookup(Ref, Name) ->
     consuela_registry_server:lookup(Ref, Name).
 
-change_proxy_mode(ModeWas, Mode, C) ->
+change_proxy_mode(Mode, C) ->
     Proxy = ?config(proxy, C),
-    _ = ct:pal(debug, "[~p] setting proxy from '~p' to '~p'", [?config(testcase, C), ModeWas, Mode]),
-    _ = ?assertEqual({ok, ModeWas}, ct_proxy:mode(Proxy, Mode)),
+    {ok, ModeWas} = ct_proxy:mode(Proxy, Mode),
+    _ = ct:pal(debug, "[~p] set proxy from '~p' to '~p'", [?config(testcase, C), ModeWas, Mode]),
     ok.
 
 %%

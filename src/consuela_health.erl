@@ -5,30 +5,32 @@
 
 %%
 
--type nodename()    :: inet:hostname().
--type servicename() :: binary().
--type checkname()   :: binary().
--type tag()         :: binary().
--type status()      :: passing | warning | critical.
--type endpoint()    :: {inet:ip_address() | undefined, inet:port_number()}.
--type metadata()    :: #{binary() => binary()}.
--type indexes()     :: #{create | modify => integer()}.
+-type node_name()    :: inet:hostname().
+-type service_id()   :: id().
+-type service_name() :: binary().
+-type check_id()     :: id().
+-type check_name()   :: binary().
+-type tag()          :: binary().
+-type status()       :: passing | warning | critical.
+-type endpoint()     :: {inet:ip_address(), inet:port_number()}.
+-type metadata()     :: #{binary() => binary()}.
+-type indexes()      :: #{create | modify => integer()}.
 
--type id()          :: binary().
--type uuid()        :: binary().
--type seconds()     :: non_neg_integer().
+-type id()           :: binary().
+-type uuid()         :: binary().
+-type seconds()      :: non_neg_integer().
 
 -type node_() :: #{
     id       := uuid(),
-    name     := nodename(),
+    name     := node_name(),
     address  := inet:ip_address(),
     metadata => metadata(),
     indexes  => indexes()
 }.
 
 -type service() :: #{
-    id       := id(),
-    name     := servicename(),
+    id       := service_id(),
+    name     := service_name(),
     tags     := [tag()],
     endpoint := endpoint(),
     metadata => metadata(),
@@ -36,8 +38,8 @@
 }.
 
 -type check() :: #{
-    id       := id(),
-    name     := checkname(),
+    id       := check_id(),
+    name     := check_name(),
     status   := status(),
     indexes  => indexes()
 }.
@@ -48,10 +50,17 @@
     checks   := [check()]
 }.
 
--export_type([servicename/0]).
--export_type([nodename/0]).
+-export_type([service_id/0]).
+-export_type([service_name/0]).
+-export_type([check_id/0]).
+-export_type([node_name/0]).
 -export_type([tag/0]).
+-export_type([endpoint/0]).
+-export_type([status/0]).
 -export_type([t/0]).
+
+-export_type([service_params/0]).
+-export_type([check_params/0]).
 
 -export([get/4]).
 -export([register/2]).
@@ -59,7 +68,7 @@
 
 %%
 
--spec get(servicename(), [tag()], boolean(), consuela_client:t()) ->
+-spec get(service_name(), [tag()], boolean(), consuela_client:t()) ->
     {ok, [t()]}.
 
 get(ServiceName, Tags, Passing, Client) ->
@@ -75,17 +84,17 @@ get(ServiceName, Tags, Passing, Client) ->
     end.
 
 -type service_params() :: #{
-    name     := servicename(),
-    id       => id(),
+    name     := service_name(),
+    id       => service_id(),
     tags     := [tag()],
-    endpoint := endpoint(),
+    endpoint => endpoint(),
     checks   => [check_params()]
 }.
 
 -type check_params() :: #{
-    name     := checkname(),
-    id       => id(),
-    type     := {ttl, seconds()}, % TODO | {http, ...}
+    name     := check_name(),
+    id       => check_id(),
+    type     := {ttl, seconds()} | {tcp, endpoint(), seconds()}, % TODO | {http, ...}
     initial  => status()
 }.
 
@@ -102,7 +111,7 @@ register(ServiceParams, Client) ->
             erlang:error(Reason)
     end.
 
--spec deregister(servicename() | id(), consuela_client:t()) ->
+-spec deregister(service_name() | service_id(), consuela_client:t()) ->
     ok | {error, notfound}.
 
 deregister(ServiceNameOrID, Client) ->
@@ -131,18 +140,19 @@ attach_passing(false, Q) ->
 
 encode_service_params(#{
     name     := Name,
-    tags     := Tags,
-    endpoint := {Address, Port}
+    tags     := Tags
 } = V) ->
-    maps:merge(
+    lists:foldl(
+        fun maps:merge/2,
         #{
             <<"Name">>    => encode_servicename(Name),
             <<"ID">>      => encode_binary(maps:get(id, V, genlib:to_binary(Name))),
-            <<"Tags">>    => encode_tags(Tags),
-            <<"Address">> => encode_address(Address),
-            <<"Port">>    => encode_port(Port)
+            <<"Tags">>    => encode_tags(Tags)
         },
-        encode_checks(maps:get(checks, V, undefined))
+        [
+            encode_endpoint(maps:get(endpoint, V, undefined)),
+            encode_checks(maps:get(checks, V, undefined))
+        ]
     ).
 
 encode_tags(V) ->
@@ -150,6 +160,14 @@ encode_tags(V) ->
 
 encode_tag(V) ->
     encode_binary(V).
+
+encode_endpoint(undefined) ->
+    #{};
+encode_endpoint({IP, Port}) ->
+    #{
+        <<"Address">> => encode_address(IP),
+        <<"Port">>    => encode_port(Port)
+    }.
 
 encode_address(V) ->
     case inet:ntoa(V) of
@@ -170,9 +188,9 @@ encode_checks(V) when is_list(V) ->
 encode_check_params(#{name := Name, type := Type} = V) ->
     maps:merge(
         #{
-            <<"Name">>   => encode_servicename(Name),
-            <<"ID">>     => encode_binary(maps:get(id, V, Name)),
-            <<"Status">> => encode_status(maps:get(initial, V, critical))
+            <<"CheckID">> => encode_binary(maps:get(id, V, Name)),
+            <<"Name">>    => encode_servicename(Name),
+            <<"Status">>  => encode_status(maps:get(initial, V, critical))
         },
         encode_check_type(Type)
     ).
@@ -180,6 +198,11 @@ encode_check_params(#{name := Name, type := Type} = V) ->
 encode_check_type({ttl, V}) ->
     #{
         <<"TTL">> => encode_duration('s', V)
+    };
+encode_check_type({tcp, {IP, Port}, Interval}) ->
+    #{
+        <<"TCP">>      => iolist_to_binary([encode_address(IP), ":", integer_to_binary(encode_port(Port))]),
+        <<"Interval">> => encode_duration('s', Interval)
     }.
 
 encode_status(passing) ->

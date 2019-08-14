@@ -6,6 +6,7 @@
 -include_lib("stdlib/include/assert.hrl").
 
 -export([stop_linked/2]).
+-export([unlink/1]).
 
 -export([await/2]).
 -export([await/3]).
@@ -25,6 +26,13 @@ stop_linked(Pid, Reason) ->
         {'DOWN', MRef, process, Pid, _} ->
             ok
     end.
+
+-spec unlink(pid()) ->
+    pid().
+
+unlink(Pid) ->
+    true = erlang:unlink(Pid),
+    Pid.
 
 %%
 

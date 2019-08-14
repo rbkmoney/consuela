@@ -9,6 +9,7 @@
 -type name()     :: binary().
 -type nodename() :: inet:hostname().
 -type ttl()      :: seconds().
+-type check()    :: consuela_health:check_id().
 -type delay()    :: seconds().
 -type behavior() :: release | delete.
 -type indexes()  :: #{create | modify => integer()}.
@@ -20,6 +21,7 @@
     id         := id(),
     name       := name(),
     node       := nodename(),
+    checks     := [check()],
     ttl        := ttl(),
     lock_delay := delay(),
     behavior   := behavior(),
@@ -36,20 +38,22 @@
 
 -export([create/4]).
 -export([create/5]).
--export([create/6]).
 -export([destroy/2]).
 -export([get/2]).
 -export([renew/2]).
 
 %%
 
+-type opts() :: #{
+    checks     => [check()], % [] by default
+    lock_delay => delay(),
+    behavior   => behavior()
+}.
+
 -spec create(name(), nodename(), ttl(), consuela_client:t()) ->
     {ok, id()}.
 
--spec create(name(), nodename(), ttl(), delay(), consuela_client:t()) ->
-    {ok, id()}.
-
--spec create(name(), nodename(), ttl(), delay(), behavior(), consuela_client:t()) ->
+-spec create(name(), nodename(), ttl(), opts(), consuela_client:t()) ->
     {ok, id()}.
 
 -spec get(id(), consuela_client:t()) ->
@@ -62,26 +66,31 @@
     {ok, t()}.
 
 create(Name, Node, TTL, Client) ->
-    create(#{name => Name, node => Node, ttl => TTL}, Client).
+    create(Name, Node, TTL, #{}, Client).
 
-create(Name, Node, TTL, LockDelay, Client) ->
-    create(#{name => Name, node => Node, ttl => TTL, lock_delay => LockDelay}, Client).
-
-create(Name, Node, TTL, LockDelay, Behavior, Client) ->
-    create(
-        #{name => Name, node => Node, ttl => TTL, lock_delay => LockDelay, behavior => Behavior},
-        Client
-    ).
-
-create(Params, Client) ->
+create(Name, Node, TTL, Opts, Client) ->
     Resource = <<"/v1/session/create">>,
-    Content = encode_params(Params),
+    Content = encode_params(mk_params(Name, Node, TTL, Opts)),
     case consuela_client:request(put, Resource, Content, Client) of
         {ok, SessionID} ->
             {ok, decode_session_id(SessionID)};
         {error, Reason} ->
             erlang:error(Reason)
     end.
+
+mk_params(Name, Node, TTL, Opts) ->
+    % NOTE
+    % We deliberately override Consul defaults here despite strong recommendations against such measures.
+    % This is because letting serfHealth decide if the node is dead proved too unreliable during stress
+    % testing. We were able to trigger session invalidation when consuela app was alive and stable, session
+    % had 10 seconds more to live, even the node was on the majority side of a cluster.
+    Params = #{
+        name   => Name,
+        node   => Node,
+        ttl    => TTL,
+        checks => []
+    },
+    maps:merge(Params, Opts).
 
 get(ID, Client) ->
     Resource = [<<"/v1/session/info/">>, encode_id(ID)],
@@ -119,6 +128,7 @@ encode_params(Params = #{name := Name, node := Node, ttl := TTL}) ->
         fun
             (behavior, V, R)   -> R#{<<"Behavior">> => encode_behavior(V)};
             (lock_delay, V, R) -> R#{<<"LockDelay">> => encode_seconds(V)};
+            (checks, V, R)     -> R#{<<"Checks">> => encode_checks(V)};
             (_, _, R)          -> R
         end,
         #{
@@ -139,6 +149,9 @@ encode_nodename(V) when is_atom(V) ->
     encode_string(erlang:atom_to_list(V));
 encode_nodename(V) when is_list(V) ->
     encode_string(V).
+
+encode_checks(V) when is_list(V) ->
+    [encode_id(E) || E <- V].
 
 encode_seconds(V) ->
     encode_duration('s', V).
@@ -167,18 +180,18 @@ decode_session(#{
     <<"Name">>        := Name,
     <<"Node">>        := Node,
     <<"Behavior">>    := Behavior,
+    <<"Checks">>      := Checks,
     <<"TTL">>         := TTL,
     <<"LockDelay">>   := LockDelay,
     <<"CreateIndex">> := CreateIndex,
     <<"ModifyIndex">> := ModifyIndex
-    % TODO
-    % <<"Checks">>    := Checks,
 }) ->
     #{
         id         => decode_id(ID),
         name       => decode_name(Name),
         node       => decode_nodename(Node),
         behavior   => decode_behavior(Behavior),
+        checks     => decode_checks(Checks),
         ttl        => decode_seconds(TTL),
         lock_delay => decode_seconds(LockDelay),
         indexes    => #{
@@ -195,6 +208,11 @@ decode_name(V) ->
 
 decode_nodename(V) ->
     decode_string(V).
+
+decode_checks(V) when is_list(V) ->
+    [decode_id(E) || E <- V];
+decode_checks(null) ->
+    [].
 
 decode_seconds(V) ->
     decode_duration('s', V).

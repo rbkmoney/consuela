@@ -17,29 +17,26 @@
     opts => consuela_client:opts() % #{} by default
 }.
 
--export([start_link/2]).
+-export([start_link/1]).
 -export([stop/1]).
 
 -export_type([opts/0]).
 
 %%
 
--type ref() :: atom().
-
--spec start_link(ref(), opts()) ->
+-spec start_link(opts()) ->
     {ok, pid()} | {error, _Reason}.
 
-start_link(Ref, Opts) ->
+start_link(Opts) ->
     Name = maps:get(name, Opts),
     Tags = maps:get(tags, Opts, []),
     Client = mk_consul_client(maps:get(consul, Opts)),
     DiscoveryOpts = maps:get(opts, Opts, #{}),
     genlib_adhoc_supervisor:start_link(
-        {local, Ref},
         #{strategy => one_for_one, intensity => 20, period => 5},
         [
             #{
-                id    => {Ref, discovery},
+                id    => discovery,
                 start => {consuela_discovery_server, start_link, [Name, Tags, Client, DiscoveryOpts]}
             }
         ]
@@ -52,8 +49,8 @@ mk_consul_client(Opts) ->
     Url = maps:get(url, Opts),
     consuela_client:new(Url, maps:get(opts, Opts, #{})).
 
--spec stop(ref() | pid()) ->
+-spec stop(pid()) ->
     ok.
 
-stop(Ref) ->
-    proc_lib:stop(Ref).
+stop(Pid) ->
+    proc_lib:stop(Pid).
