@@ -111,7 +111,7 @@ mk_state(Name, ModArgs, Opts) ->
         state          => takeover,
         context        => init,
         pulse          => maps:get(pulse, Opts, {?MODULE, []}),
-        retry_strategy => maps:get(retry, Opts, genlib_retry:linear({max_total_timeout, 30 * 1000}, 5000))
+        retry_strategy => maps:get(retry, Opts, genlib_retry:exponential({max_total_timeout, 30 * 1000}, 2, 1000, 5000))
     }.
 
 -spec handle_continue(handoff, st()) ->
@@ -199,12 +199,8 @@ handle_takeover(St = #{state := takeover, name := Name}) ->
 handle_leader_down(MRef, Pid, Reason, St0 = #{state := {monitor, Pid, MRef}, name := Name}) ->
     _ = beat({{leader, Name}, {down, Pid, Reason}}, St0),
     St1 = St0#{state := takeover},
-    case Reason of
-        % Precaution against tight monitor-takeover loops
-        noconnection -> defer_takeover(St1);
-        noproc       -> defer_takeover(St1);
-        _            -> handle_takeover(St1)
-    end.
+    % Precaution against too tight monitor-takeover loops
+    defer_takeover(St1).
 
 -spec terminate(_Reason, st()) ->
     ok.
