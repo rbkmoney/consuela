@@ -90,7 +90,7 @@ start_stop_works(_C) ->
     ?assertEqual({error, noproc}, try_call(Ref, state)).
 
 conflict_gives_already_started(_C) ->
-    Ref = mk_ref(meself),
+    Ref = mk_ref(maself),
     {ok, Pid} = gen_server:start(Ref, ?MODULE, undefined, []),
     ?assertEqual({error, {already_started, Pid}}, gen_server:start(Ref, ?MODULE, undefined, [])),
     ?assertEqual(stopped, gen_server:call(Ref, stop)),
