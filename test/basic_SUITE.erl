@@ -240,9 +240,13 @@ dead_registration_cleaned(C) ->
 registrations_select_ok(C) ->
     N = 10,
     Ref = ?config(registry, C),
-    Slackers = [{I, spawn_slacker()} || I <- lists:seq(1, N)],
+    Slackers = [Slacker | _] = [{{id, I}, spawn_slacker()} || I <- lists:seq(1, N)],
     _ = [?assertEqual(ok, register(Ref, I, Pid)) || {I, Pid} <- Slackers],
-    _ = ?assertEqual(Slackers, lists:sort(consuela_registry_server:all(Ref))),
+    _ = ?assertEqual(Slackers, lists:sort(consuela_registry_server:select(Ref, '_'))),
+    _ = ?assertEqual(Slackers, lists:sort(consuela_registry_server:select(Ref, {id, '_'}))),
+    _ = ?assertEqual([], consuela_registry_server:select(Ref, noone)),
+    _ = ?assertEqual([], consuela_registry_server:select(Ref, {id, noone})),
+    _ = ?assertEqual([Slacker], consuela_registry_server:select(Ref, {id, 1})),
     _ = [?assertEqual(ok, unregister(Ref, I, Pid)) || {I, Pid} <- Slackers],
     _ = [?assertEqual(ok, stop_slacker(Pid)) || {_, Pid} <- Slackers],
     ok.
