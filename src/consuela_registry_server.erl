@@ -38,7 +38,7 @@
 -export([unregister/3]).
 -export([lookup/2]).
 
--export([all/1]).
+-export([select/2]).
 
 -export_type([name/0]).
 
@@ -123,12 +123,15 @@ handle_result({failed, Error}) ->
 
 %%
 
--spec all(ref()) ->
+-spec select(ref(), _Query) ->
     [{name(), pid()}].
 
-all(Ref) ->
+select(Ref, Query) ->
     Tid = mk_store_tid(Ref),
-    ets:select(Tid, [{{'$1', '$2', '_'}, [], [{{'$1', '$2'}}]}]).
+    lists:map(
+        fun (Reg) -> erlang:delete_element(3, Reg) end,
+        ets:select(Tid, [{{Query, '_', '_'}, [], ['$_']}])
+    ).
 
 %%
 
