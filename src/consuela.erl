@@ -22,11 +22,11 @@
 all() ->
     consuela_registry_server:select(consuela, '_').
 
--spec select(_Query) ->
+-spec select(_NamePattern :: ets:match_pattern()) ->
     [{name(), pid()}].
 
-select(Query) ->
-    consuela_registry_server:select(consuela, Query).
+select(NamePattern) ->
+    consuela_registry_server:select(consuela, NamePattern).
 
 %%
 

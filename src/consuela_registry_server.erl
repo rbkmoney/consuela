@@ -123,14 +123,14 @@ handle_result({failed, Error}) ->
 
 %%
 
--spec select(ref(), _Query) ->
+-spec select(ref(), _NamePattern :: ets:match_pattern()) ->
     [{name(), pid()}].
 
-select(Ref, Query) ->
+select(Ref, Pattern) ->
     Tid = mk_store_tid(Ref),
     lists:map(
         fun (Reg) -> erlang:delete_element(3, Reg) end,
-        ets:select(Tid, [{{Query, '_', '_'}, [], ['$_']}])
+        ets:select(Tid, [{{Pattern, '_', '_'}, [], ['$_']}])
     ).
 
 %%
