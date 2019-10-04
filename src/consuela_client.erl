@@ -67,6 +67,10 @@ new(Url, Opts) ->
         fun
             (datacenter, V, C = #{query := Q0}) ->
                 C#{query := [{<<"dc">>, to_binary(V)} | Q0]};
+            (acl, {file, Path}, C = #{headers := Hs0}) ->
+                % TODO error handling
+                {ok, V} = file:read_file(Path),
+                C#{headers := [{<<"X-Consul-Token">>, string:trim(V)} | Hs0]};
             (acl, V, C = #{headers := Hs0}) ->
                 C#{headers := [{<<"X-Consul-Token">>, to_binary(V)} | Hs0]};
             (transport_opts, V = #{}, C = #{opts := Opts0}) ->
