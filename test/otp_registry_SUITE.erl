@@ -16,6 +16,7 @@
 -export([nonexistent_gives_noproc/1]).
 -export([start_stop_works/1]).
 -export([conflict_gives_already_started/1]).
+-export([instant_reregister_succeeds/1]).
 
 %% Pulse
 
@@ -42,7 +43,9 @@ all() ->
     [
         nonexistent_gives_noproc,
         start_stop_works,
-        conflict_gives_already_started
+        conflict_gives_already_started,
+        instant_reregister_succeeds,
+        instant_reregister_succeeds
     ].
 
 %% Startup / shutdown
@@ -76,6 +79,7 @@ end_per_suite(C) ->
 -spec nonexistent_gives_noproc(config())       -> _.
 -spec start_stop_works(config())               -> _.
 -spec conflict_gives_already_started(config()) -> _.
+-spec instant_reregister_succeeds(config())    -> _.
 
 nonexistent_gives_noproc(_C) ->
     ?assertEqual({error, noproc}, try_call(mk_ref(noone), say)).
@@ -95,6 +99,14 @@ conflict_gives_already_started(_C) ->
     ?assertEqual({error, {already_started, Pid}}, gen_server:start(Ref, ?MODULE, undefined, [])),
     ?assertEqual(stopped, gen_server:call(Ref, stop)),
     ok.
+
+instant_reregister_succeeds(_C) ->
+    Ref = mk_ref(mooself),
+    ?assertMatch({ok, _}, gen_server:start(Ref, ?MODULE, undefined, [])),
+    ?assertEqual(stopped, gen_server:call(Ref, stop)),
+    ok = timer:sleep(1), % strictly less than typical Consul request latenc
+    ?assertMatch({ok, _}, gen_server:start(Ref, ?MODULE, undefined, [])),
+    ?assertEqual(stopped, gen_server:call(Ref, stop)).
 
 try_call(Ref, Call) ->
     try gen_server:call(Ref, Call) of
@@ -155,6 +167,6 @@ code_change(_OldVsn, St, _Extra) ->
 .
 
 handle_beat(Beat, {Producer, Category}) ->
-    ct:pal(Category, "[~p] ~p", [Producer, Beat]);
+    ct:pal(Category, "[~p] ~p ~p", [Producer, self(), Beat]);
 handle_beat(_Beat, _) ->
     ok.
