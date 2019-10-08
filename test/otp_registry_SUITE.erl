@@ -6,10 +6,12 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
+-type group_name() :: atom().
 -type test_name()  :: atom().
 -type config()     :: [{atom(), _}].
 
 -export([all/0]).
+-export([groups/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
 
@@ -37,15 +39,24 @@
 %% Description
 
 -spec all() ->
-    [test_name()].
+    [{group, group_name(), list()} | test_name()].
 
 all() ->
     [
         nonexistent_gives_noproc,
         start_stop_works,
         conflict_gives_already_started,
-        instant_reregister_succeeds,
-        instant_reregister_succeeds
+
+        {group, instant_reregister, [{repeat, 10}]}
+
+    ].
+
+-spec groups() ->
+    [{group_name(), list(), [test_name()]}].
+
+groups() ->
+    [
+        {instant_reregister, [], [instant_reregister_succeeds]}
     ].
 
 %% Startup / shutdown
