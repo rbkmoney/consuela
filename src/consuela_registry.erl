@@ -53,7 +53,7 @@ new(Namespace, Session, Client) ->
     {done, ok | {error, exists}} | {failed, failure()}.
 
 -spec try_unregister(reg(), t()) ->
-    {done, ok} | {failed, failure()}.
+    {done, ok | {error, stale}} | {failed, failure()}.
 
 -spec lookup(name(), t()) ->
     {done, {ok, pid()} | {error, notfound}} | {failed, failure()}.
@@ -78,8 +78,7 @@ try_unregister({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client :=
         case consuela_lock:get(ID, Client) of
             {ok, Lock = #{value := {Rid, Pid}, session := Sid}} ->
                 % Looks like the lock is still ours
-                ok = consuela_lock:delete(Lock, Client),
-                {done, ok};
+                {done, consuela_lock:delete(Lock, Client)};
             {ok, #{value := _, session := _}} ->
                 % Looks like someone (even us) is quick enough to hold it already, as the result of client
                 % retrying for example
