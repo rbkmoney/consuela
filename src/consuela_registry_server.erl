@@ -81,7 +81,6 @@
 
 -define(REGISTRATION_ETC       , 100).  % TODO too short?
 -define(REGISTRATION_TIMEOUT   , 1000). % TODO too short?
--define(DRAINING_ETC           , 100).  % TODO too short?
 
 -type ref() :: atom().
 
@@ -170,7 +169,6 @@ get_now() ->
 -type st() :: #{
     store     := store(),
     monitors  := #{reference() => reg(), name() => reference()},
-    drainees  := #{name() => nil()},
     registry  := consuela_registry:t(),
     reaper    := consuela_zombie_reaper:ref(),
     cache     := cache(),
@@ -194,7 +192,6 @@ init({Ref, Registry, ReaperRef, Opts}) ->
         #{
             store    => Store,
             monitors => #{},
-            drainees => #{},
             registry => Registry,
             reaper   => ReaperRef,
             cache    => Cache,
@@ -245,18 +242,14 @@ handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
     {noreply, St}.
 
--type info() ::
-    {'DOWN', reference(), process, pid(), _Reason} |
-    {drained, name()}.
+-type down() :: {'DOWN', reference(), process, pid(), _Reason}.
 
--spec handle_info(info(), st()) ->
-    {noreply, st()}.
+-spec handle_info(down(), st()) ->
+    {noreply, st()} | {noreply, st(), 0}.
 
 handle_info({'DOWN', MRef, process, Pid, _Reason}, St) ->
     % TODO beat?
     {noreply, handle_down(MRef, Pid, St)};
-handle_info({drained, Name}, St) ->
-    {noreply, remove_drainee(Name, St)};
 handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
     {noreply, St}.
@@ -304,8 +297,7 @@ handle_register(Name, Pid, St) ->
             {{done, ok}, St};
         {error, notfound} ->
             % If it's not there time to go global
-            St1 = try_await_draining(Name, St),
-            handle_register_global(Name, Pid, St1);
+            handle_register_global(Name, Pid, St);
         {ok, _} ->
             % If the name already taken locally error out
             {{done, {error, exists}}, St}
@@ -431,31 +423,13 @@ handle_unregister_known(Reg, St0) ->
     end,
     St1.
 
-handle_unregister_dead(Reg = {_Rid, Name, _Pid}, St0) ->
+handle_unregister_dead(Reg, St0) ->
     % Delegate actual deregistration to zombie reaper for now. Nobody would need the result anyway so we can
     % safely rely on another process. This way any storm of process deaths coming in would not block
     % registry.
-    ok = enqueue_zombie(Reg, #{drain => true, notify => {self(), {drained, Name}}}, St0),
+    ok = enqueue_zombie(Reg, #{drain => true}, St0),
     ok = remove_local(Reg, St0),
-    add_drainee(Name, demonitor_name(Reg, St0)).
-
-add_drainee(Name, St = #{drainees := Ds}) ->
-    St#{drainees := Ds#{Name => []}}.
-
-remove_drainee(Name, St = #{drainees := Ds}) ->
-    St#{drainees := maps:remove(Name, Ds)}.
-
-try_await_draining(Name, St = #{drainees := Ds0}) ->
-    case maps:take(Name, Ds0) of
-        {[], Ds} ->
-            receive
-                {drained, Name} -> St#{drainees := Ds}
-            after ?DRAINING_ETC ->
-                St
-            end;
-        error ->
-            St
-    end.
+    demonitor_name(Reg, St0).
 
 %%
 

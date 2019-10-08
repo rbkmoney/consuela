@@ -74,19 +74,11 @@ start_link(Registry, Opts) ->
 enqueue(Ref, Zombie) ->
     enqueue(Ref, Zombie, #{}).
 
--type notification() :: {pid(), _Message}.
-
--type enqueue_opts() :: #{
-    drain => boolean(),
-    notify => notification()
-}.
-
--spec enqueue(ref(), zombie(), enqueue_opts()) ->
+-spec enqueue(ref(), zombie(), #{drain => boolean()}) ->
     ok.
 
 enqueue(Ref, Zombie, Opts) ->
-    Notification = maps:get(notify, Opts, undefined),
-    gen_server:cast(Ref, {enqueue, Zombie, Notification, Opts}).
+    gen_server:cast(Ref, {enqueue, Zombie, Opts}).
 
 -spec drain(ref()) ->
     ok.
@@ -99,7 +91,7 @@ drain(Ref) ->
 -type zombie() :: consuela_registry:reg().
 
 -type st() :: #{
-    queue          := queue:queue({zombie(), notification() | undefined}),
+    queue          := queue:queue(zombie()),
     registry       := consuela_registry:t(),
     retry_strategy := genlib_retry:strategy(),
     retry_state    => genlib_retry:strategy(),
@@ -140,15 +132,13 @@ handle_call(Call, From, St) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
     {noreply, St}.
 
--type cast() ::
-    {enqueue, zombie(), notification() | undefined, enqueue_opts()} |
-    drain.
+-type cast() :: {enqueue, zombie()} | drain.
 
 -spec handle_cast(cast(), st()) ->
     {noreply, st()}.
 
-handle_cast({enqueue, Zombie, Notification, Opts}, St) ->
-    {noreply, handle_enqueue(Zombie, Notification, Opts, St)};
+handle_cast({enqueue, Zombie, Opts}, St) ->
+    {noreply, handle_enqueue(Zombie, Opts, St)};
 handle_cast(drain, St) ->
     {noreply, try_drain_queue(St)};
 handle_cast(Cast, St) ->
@@ -181,8 +171,8 @@ code_change(_Vsn, St, _Extra) ->
 
 %%
 
-handle_enqueue(Zombie, Notification, Opts, St0 = #{queue := Q}) ->
-    St1 = St0#{queue := queue:in({Zombie, Notification}, Q)},
+handle_enqueue(Zombie, Opts, St0 = #{queue := Q}) ->
+    St1 = St0#{queue := queue:in(Zombie, Q)},
     _ = beat({{zombie, Zombie}, enqueued}, St1),
     case Opts of
         #{drain := true} ->
@@ -200,12 +190,11 @@ try_drain_queue(St = #{queue := Queue}) ->
     end.
 
 try_clean_queue(Mode, St0 = #{queue := Q0, registry := Registry}) ->
-    {{value, {Zombie, Notification}}, Q1} = queue:out(Q0),
+    {{value, Zombie}, Q1} = queue:out(Q0),
     case consuela_registry:try_unregister(Zombie, Registry) of
         {done, ok} ->
             St1 = St0#{queue := Q1},
             _ = beat({{zombie, Zombie}, {reaping, succeeded}}, St1),
-            _ = try_notify(Notification),
             try_force_timer(reset_retry_state(St1));
         {failed, Reason} ->
             _ = beat({{zombie, Zombie}, {reaping, {failed, Reason}}}, St0),
@@ -216,11 +205,6 @@ try_clean_queue(Mode, St0 = #{queue := Q0, registry := Registry}) ->
                     try_start_timer(St0)
             end
     end.
-
-try_notify(undefined) ->
-    ok;
-try_notify({Pid, Message}) ->
-    Pid ! Message.
 
 try_force_timer(St) ->
     try_start_timer(0, try_reset_timer(St)).
