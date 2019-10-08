@@ -115,7 +115,7 @@ instant_reregister_succeeds(_C) ->
     Ref = mk_ref(mooself),
     ?assertMatch({ok, _}, gen_server:start(Ref, ?MODULE, undefined, [])),
     ?assertEqual(stopped, gen_server:call(Ref, stop)),
-    ok = timer:sleep(1), % strictly less than typical Consul request latenc
+    ok = timer:sleep(1), % strictly less than typical Consul request latency
     ?assertMatch({ok, _}, gen_server:start(Ref, ?MODULE, undefined, [])),
     ?assertEqual(stopped, gen_server:call(Ref, stop)).
 
