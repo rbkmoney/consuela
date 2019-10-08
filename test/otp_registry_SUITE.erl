@@ -6,16 +6,19 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
+-type group_name() :: atom().
 -type test_name()  :: atom().
 -type config()     :: [{atom(), _}].
 
 -export([all/0]).
+-export([groups/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
 
 -export([nonexistent_gives_noproc/1]).
 -export([start_stop_works/1]).
 -export([conflict_gives_already_started/1]).
+-export([instant_reregister_succeeds/1]).
 
 %% Pulse
 
@@ -36,13 +39,24 @@
 %% Description
 
 -spec all() ->
-    [test_name()].
+    [{group, group_name(), list()} | test_name()].
 
 all() ->
     [
         nonexistent_gives_noproc,
         start_stop_works,
-        conflict_gives_already_started
+        conflict_gives_already_started,
+
+        {group, instant_reregister, [{repeat, 10}]}
+
+    ].
+
+-spec groups() ->
+    [{group_name(), list(), [test_name()]}].
+
+groups() ->
+    [
+        {instant_reregister, [], [instant_reregister_succeeds]}
     ].
 
 %% Startup / shutdown
@@ -76,6 +90,7 @@ end_per_suite(C) ->
 -spec nonexistent_gives_noproc(config())       -> _.
 -spec start_stop_works(config())               -> _.
 -spec conflict_gives_already_started(config()) -> _.
+-spec instant_reregister_succeeds(config())    -> _.
 
 nonexistent_gives_noproc(_C) ->
     ?assertEqual({error, noproc}, try_call(mk_ref(noone), say)).
@@ -95,6 +110,14 @@ conflict_gives_already_started(_C) ->
     ?assertEqual({error, {already_started, Pid}}, gen_server:start(Ref, ?MODULE, undefined, [])),
     ?assertEqual(stopped, gen_server:call(Ref, stop)),
     ok.
+
+instant_reregister_succeeds(_C) ->
+    Ref = mk_ref(mooself),
+    ?assertMatch({ok, _}, gen_server:start(Ref, ?MODULE, undefined, [])),
+    ?assertEqual(stopped, gen_server:call(Ref, stop)),
+    ok = timer:sleep(1), % strictly less than typical Consul request latency
+    ?assertMatch({ok, _}, gen_server:start(Ref, ?MODULE, undefined, [])),
+    ?assertEqual(stopped, gen_server:call(Ref, stop)).
 
 try_call(Ref, Call) ->
     try gen_server:call(Ref, Call) of
@@ -155,6 +178,6 @@ code_change(_OldVsn, St, _Extra) ->
 .
 
 handle_beat(Beat, {Producer, Category}) ->
-    ct:pal(Category, "[~p] ~p", [Producer, Beat]);
+    ct:pal(Category, "[~p] ~p ~p", [Producer, self(), Beat]);
 handle_beat(_Beat, _) ->
     ok.

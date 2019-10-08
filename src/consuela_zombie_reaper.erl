@@ -32,7 +32,7 @@
 -type beat() ::
     {{zombie, zombie()},
         enqueued |
-        {reaping, succeeded | {failed, _Reason}}
+        {reaping, succeeded | {skipped, _Reason} | {failed, _Reason}}
     } |
     {{timer, reference()},
         {started, timeout()} |
@@ -195,6 +195,10 @@ try_clean_queue(Mode, St0 = #{queue := Q0, registry := Registry}) ->
         {done, ok} ->
             St1 = St0#{queue := Q1},
             _ = beat({{zombie, Zombie}, {reaping, succeeded}}, St1),
+            try_force_timer(reset_retry_state(St1));
+        {done, {error, stale}} ->
+            St1 = St0#{queue := Q1},
+            _ = beat({{zombie, Zombie}, {reaping, {skipped, stale}}}, St1),
             try_force_timer(reset_retry_state(St1));
         {failed, Reason} ->
             _ = beat({{zombie, Zombie}, {reaping, {failed, Reason}}}, St0),

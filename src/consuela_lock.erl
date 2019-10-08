@@ -72,13 +72,15 @@ release(ID, Session, Client) ->
     end.
 
 -spec delete(lock(), consuela_client:t()) ->
-    ok | {error, failed}.
+    ok | {error, stale}.
 
 delete(#{id := ID, indexes := {_, ModifyIndex, _}}, Client) ->
     Resource = {[<<"/v1/kv/">> | encode_id(ID)], encode_cas(ModifyIndex)},
     case consuela_client:request(delete, Resource, Client) of
         {ok, true} ->
             ok;
+        {ok, false} ->
+            {error, stale};
         {error, Reason} ->
             erlang:error(Reason)
     end.

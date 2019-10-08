@@ -372,7 +372,30 @@ lookup(Ref, Name, Registry) ->
         {ok, Reg} ->
             {done, {ok, get_reg_pid(Reg)}};
         {error, notfound} ->
-            consuela_registry:lookup(Name, Registry)
+            case consuela_registry:lookup(Name, Registry) of
+                {done, {ok, Pid}} ->
+                    % Process may be alive from the global point of view but already dead from the
+                    % local point of view. In the latter case the registration should be queued in
+                    % the zombie reaper already. Since local liveness check is cheap we perform it
+                    % here. This is a kind of safeguard for scenarios where one tries to register
+                    % process under the name of a process that just died but have not been reaped
+                    % yet.
+                    {done, ensure_alive_if_local(Pid)};
+                Result ->
+                    Result
+            end
+    end.
+
+ensure_alive_if_local(Pid) ->
+    This = erlang:node(),
+    case erlang:node(Pid) of
+        This ->
+            case erlang:is_process_alive(Pid) of
+                true  -> {ok, Pid};
+                false -> {error, notfound}
+            end;
+        _ ->
+            {ok, Pid}
     end.
 
 %%
