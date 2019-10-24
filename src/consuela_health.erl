@@ -386,15 +386,15 @@ encode_tcp_check_test_() ->
     [
         ?_assertMatch(
             #{<<"TCP">> := <<"10.0.0.1:4242">>},
-            encode_check_type({tcp, {{10,0,0,1}, 4242}, 5})
+            encode_check_type({tcp, {{10, 0, 0, 1}, 4242}, 5})
         ),
         ?_assertMatch(
             #{<<"TCP">> := <<"[::]:4242">>},
-            encode_check_type({tcp, {{0,0,0,0,0,0,0,0}, 4242}, 5})
+            encode_check_type({tcp, {{0, 0, 0, 0, 0, 0, 0, 0}, 4242}, 5})
         ),
         ?_assertMatch(
             #{<<"TCP">> := <<"[fc00::1]:4242">>},
-            encode_check_type({tcp, {{16#fc00,0,0,0,0,0,0,1}, 4242}, 5})
+            encode_check_type({tcp, {{16#fc00, 0, 0, 0, 0, 0, 0, 1}, 4242}, 5})
         )
     ].
 
