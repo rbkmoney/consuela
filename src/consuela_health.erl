@@ -200,8 +200,13 @@ encode_check_type({ttl, V}) ->
         <<"TTL">> => encode_duration('s', V)
     };
 encode_check_type({tcp, {IP, Port}, Interval}) ->
+    IP1 = case inet:ntoa(IP) of
+        R when is_list(R), tuple_size(IP) == 8 -> [$[, R, $]];
+        R when is_list(R), tuple_size(IP) == 4 -> R;
+        {error, einval} -> erlang:error(badarg)
+    end,
     #{
-        <<"TCP">>      => iolist_to_binary([encode_address(IP), ":", integer_to_binary(encode_port(Port))]),
+        <<"TCP">>      => iolist_to_binary([IP1, ":", integer_to_binary(encode_port(Port))]),
         <<"Interval">> => encode_duration('s', Interval)
     }.
 
@@ -367,3 +372,30 @@ decode_integer(V) when is_integer(V) ->
 
 decode_binary(V) when is_binary(V) ->
     V.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+-type testcase() :: {_, fun()}.
+
+-spec test() -> _.
+
+-spec encode_tcp_check_test_() -> [testcase()].
+
+encode_tcp_check_test_() ->
+    [
+        ?_assertMatch(
+            #{<<"TCP">> := <<"10.0.0.1:4242">>},
+            encode_check_type({tcp, {{10,0,0,1}, 4242}, 5})
+        ),
+        ?_assertMatch(
+            #{<<"TCP">> := <<"[::]:4242">>},
+            encode_check_type({tcp, {{0,0,0,0,0,0,0,0}, 4242}, 5})
+        ),
+        ?_assertMatch(
+            #{<<"TCP">> := <<"[fc00::1]:4242">>},
+            encode_check_type({tcp, {{16#fc00,0,0,0,0,0,0,1}, 4242}, 5})
+        )
+    ].
+
+-endif.
