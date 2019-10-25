@@ -47,16 +47,19 @@ new(Namespace, Session, Client) ->
     }.
 
 -type failure() ::
-    {failed, {failed | unknown, _Reason}}.
+    {failed | unknown, _Reason}.
+
+-type result(T) ::
+    {done, T} | {failed, failure()}.
 
 -spec register(reg(), t()) ->
-    {done, ok | {error, exists}} | {failed, failure()}.
+    result(ok | {error, exists}).
 
 -spec unregister(reg(), t()) ->
-    {done, ok | {error, stale}} | {failed, failure()}.
+    result(ok | {error, stale}).
 
 -spec lookup(name(), t()) ->
-    {done, {ok, pid()} | {error, notfound}} | {failed, failure()}.
+    result({ok, pid()} | {error, notfound}).
 
 register({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client := Client}) ->
     ID = mk_lock_id(Name, Registry),
