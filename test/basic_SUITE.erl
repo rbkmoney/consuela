@@ -22,6 +22,7 @@
 -export([empty_lookup_notfound/1]).
 -export([empty_unregistration_notfound/1]).
 -export([registration_persists/1]).
+-export([multiple_names_ok/1]).
 -export([complex_process_name_ok/1]).
 -export([conflicting_registration_fails/1]).
 -export([registration_unregistration_succeeds/1]).
@@ -46,6 +47,7 @@ all() ->
     [
         {group, regular_workflow},
         {group, proper_exceptions},
+        {group, restart_workflow},
         {group, presence_workflow}
     ].
 
@@ -59,6 +61,7 @@ groups() ->
             empty_lookup_notfound,
             empty_unregistration_notfound,
             registration_persists,
+            multiple_names_ok,
             complex_process_name_ok,
             conflicting_registration_fails,
             registration_unregistration_succeeds,
@@ -71,6 +74,11 @@ groups() ->
             unavail_lookup_exits,
             unavail_registration_exits,
             no_registry_exits
+        ]},
+
+        {restart_workflow, [], [
+            {testcase, registration_persists, [{repeat, 10}]},
+            {testcase, multiple_names_ok, [{repeat, 10}]}
         ]},
 
         {presence_workflow, [], [
@@ -110,7 +118,7 @@ init_per_suite(C) ->
             pulse => {?MODULE, {client, debug}}
         }
     },
-    [{suite_apps, Apps}, {consul, Consul} | C].
+    [{suite_apps, Apps}, {consul, Consul}, {multiplicity, 3} | C].
 
 end_per_suite(C) ->
     genlib_app:test_application_stop(?config(suite_apps, C)).
@@ -139,6 +147,8 @@ init_per_group(presence_workflow, C) ->
     },
     {ok, Pid} = consuela_presence_sup:start_link(Opts),
     [{session, #{presence => Name}}, {presence_sup, ct_helper:unlink(Pid)} | C];
+init_per_group(restart_workflow, C) ->
+    [{multiplicity, 50} | C];
 init_per_group(_, C) ->
     C.
 
@@ -171,6 +181,7 @@ end_per_testcase(_Name, C) ->
 -spec empty_lookup_notfound(config())                -> _.
 -spec empty_unregistration_notfound(config())        -> _.
 -spec registration_persists(config())                -> _.
+-spec multiple_names_ok(config())                    -> _.
 -spec complex_process_name_ok(config())              -> _.
 -spec conflicting_registration_fails(config())       -> _.
 -spec registration_unregistration_succeeds(config()) -> _.
@@ -195,6 +206,13 @@ registration_persists(C) ->
     _ = ?assertEqual(ok, register(Ref, me, self())),
     _ = ?assertEqual(ok, register(Ref, me, self())),
     _ = ?assertEqual({ok, self()}, lookup(Ref, me)),
+    ok.
+
+multiple_names_ok(C) ->
+    Ref = ?config(registry, C),
+    M = ?config(multiplicity, C),
+    Pid = self(),
+    _ = [?assertEqual(ok, register(Ref, N, Pid)) || N <- lists:seq(1, M)],
     ok.
 
 conflicting_registration_fails(C) ->
