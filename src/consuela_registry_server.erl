@@ -257,11 +257,12 @@ handle_info(Info, St) ->
 -spec terminate(_Reason, st()) ->
     ok.
 
-terminate(shutdown, St0) ->
+terminate(shutdown, St) ->
     % Implying that it's our duty to denounce every registration we know of upon regular shutdown. Otherwise
     % someone will have to wait for _LockDelay_ to pass until, for example, planned node restart may proceed.
-    _St = fold_local(fun handle_unregister_known/2, St0, St0),
-    ok;
+    ok = handle_purge(St);
+terminate({shutdown, _Reason}, St) ->
+    ok = handle_purge(St);
 terminate(_Reason, _St) ->
     ok.
 
@@ -361,10 +362,10 @@ try_enqueue_zombie({failed, {Class, _}}, Context, Reg, St) when
     enqueue_zombie(Reg, St).
 
 enqueue_zombie(Reg, #{reaper := ReaperRef}) ->
-    consuela_zombie_reaper:enqueue(ReaperRef, Reg).
+    consuela_zombie_reaper:enqueue(ReaperRef, [Reg]).
 
 enqueue_zombie(Reg, Opts, #{reaper := ReaperRef}) ->
-    consuela_zombie_reaper:enqueue(ReaperRef, Reg, Opts).
+    consuela_zombie_reaper:enqueue(ReaperRef, [Reg], Opts).
 
 lookup(Ref, Name, Registry) ->
     % Doing local lookup first
@@ -418,17 +419,6 @@ handle_down(MRef, Pid, St0 = #{monitors := Monitors}) ->
     % No need to lookup local store, it must be there
     handle_unregister_dead(Reg, St0).
 
-handle_unregister_known(Reg, St0) ->
-    _ = beat({{unregister, Reg}, started}, St0),
-    {Result, St1} = handle_unregister_global(Reg, St0),
-    _ = case Result of
-        {done, Done} ->
-            beat({{unregister, Reg}, {finished, Done}}, St1);
-        {failed, _} ->
-            beat({{unregister, Reg}, Result}, St1)
-    end,
-    St1.
-
 handle_unregister_dead(Reg, St0) ->
     % Delegate actual deregistration to zombie reaper for now. Nobody would need the result anyway so we can
     % safely rely on another process. This way any storm of process deaths coming in would not block
@@ -436,6 +426,9 @@ handle_unregister_dead(Reg, St0) ->
     ok = enqueue_zombie(Reg, #{drain => true}, St0),
     ok = remove_local(Reg, St0),
     demonitor_name(Reg, St0).
+
+handle_purge(St = #{reaper := ReaperRef}) ->
+    consuela_zombie_reaper:enqueue(ReaperRef, list_local(St), #{sync => true}).
 
 %%
 
@@ -454,13 +447,8 @@ remove_local({_Rid, Name, _Pid}, #{store := Tid}) ->
     true = ets:delete(Tid, Name),
     ok.
 
-fold_local(Fun, Acc0, #{store := Tid}) ->
-    true = ets:safe_fixtable(Tid, true),
-    try
-        ets:foldl(fun ({Name, Pid, Rid}, Acc) -> Fun({Rid, Name, Pid}, Acc) end, Acc0, Tid)
-    after
-        true = ets:safe_fixtable(Tid, false)
-    end.
+list_local(#{store := Tid}) ->
+    ets:foldl(fun ({Name, Pid, Rid}, Acc) -> [{Rid, Name, Pid} | Acc] end, [], Tid).
 
 lookup_local_store(Name, #{store := Tid}) ->
     do_lookup(Name, Tid);

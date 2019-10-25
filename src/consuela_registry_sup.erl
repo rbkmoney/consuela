@@ -73,20 +73,20 @@ start_link(Ref, Opts) ->
     ),
     {ok, ReaperPid} = supervisor:start_child(
         Pid,
-        #{
-            id    => {Ref, reaper},
-            start => {consuela_zombie_reaper, start_link, [Registry, ReaperOpts]}
-        }
-    ),
-    {ok, _RegistryPid} = supervisor:start_child(
-        Pid,
         maps:merge(
             #{
-                id    => {Ref, registry},
-                start => {consuela_registry_server, start_link, [Ref, Registry, ReaperPid, RegistryOpts]}
+                id    => {Ref, reaper},
+                start => {consuela_zombie_reaper, start_link, [Registry, ReaperOpts]}
             },
             maps:with([shutdown], Opts)
         )
+    ),
+    {ok, _RegistryPid} = supervisor:start_child(
+        Pid,
+        #{
+            id    => {Ref, registry},
+            start => {consuela_registry_server, start_link, [Ref, Registry, ReaperPid, RegistryOpts]}
+        }
     ),
     {ok, Pid}.
 

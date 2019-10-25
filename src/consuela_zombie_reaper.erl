@@ -68,17 +68,24 @@
 start_link(Registry, Opts) ->
     gen_server:start_link(?MODULE, {Registry, Opts}, []).
 
--spec enqueue(ref(), zombie()) ->
+-spec enqueue(ref(), [zombie()]) ->
     ok.
 
-enqueue(Ref, Zombie) ->
-    enqueue(Ref, Zombie, #{}).
+enqueue(Ref, Zombies) ->
+    enqueue(Ref, Zombies, #{}).
 
--spec enqueue(ref(), zombie(), #{drain => boolean()}) ->
+-type enqueue_opts() :: #{
+    drain => boolean(), % Try to drain queue right away? (false by default)
+    sync  => boolean()  % Wait for enqueue confirmation? (false by default0
+}.
+
+-spec enqueue(ref(), [zombie()], enqueue_opts()) ->
     ok.
 
-enqueue(Ref, Zombie, Opts) ->
-    gen_server:cast(Ref, {enqueue, Zombie, Opts}).
+enqueue(Ref, Zombies, Opts = #{sync := true}) ->
+    gen_server:call(Ref, {enqueue, Zombies, maps:without([sync], Opts)});
+enqueue(Ref, Zombies, Opts) ->
+    gen_server:cast(Ref, {enqueue, Zombies, Opts}).
 
 -spec drain(ref()) ->
     ok.
@@ -125,22 +132,26 @@ init({Registry, Opts}) ->
     ),
     {ok, reset_retry_state(St)}.
 
--spec handle_call(_Call, from(), st()) ->
+-type call() :: {enqueue, [zombie()], enqueue_opts()}.
+
+-spec handle_call(call(), from(), st()) ->
     {noreply, st()}.
 
+handle_call({enqueue, Zombies, Opts}, _From, St) ->
+    {reply, ok, handle_enqueue(Zombies, Opts, St)};
 handle_call(Call, From, St) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
     {noreply, St}.
 
--type cast() :: {enqueue, zombie()} | drain.
+-type cast() :: {enqueue, [zombie()], enqueue_opts()} | drain.
 
 -spec handle_cast(cast(), st()) ->
     {noreply, st()}.
 
-handle_cast({enqueue, Zombie, Opts}, St) ->
-    {noreply, handle_enqueue(Zombie, Opts, St)};
+handle_cast({enqueue, Zombies, Opts}, St) ->
+    {noreply, handle_enqueue(Zombies, Opts, St)};
 handle_cast(drain, St) ->
-    {noreply, try_drain_queue(St)};
+    {noreply, try_drain_head(St)};
 handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
     {noreply, St}.
@@ -152,7 +163,7 @@ handle_cast(Cast, St) ->
 
 handle_info({timeout, TimerRef, clean}, St = #{timer := TimerRef}) ->
     _ = beat({{timer, TimerRef}, fired}, St),
-    {noreply, try_clean_queue(regular, maps:remove(timer, St))};
+    {noreply, try_clean_head(regular, maps:remove(timer, St))};
 handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
     {noreply, St}.
@@ -160,7 +171,11 @@ handle_info(Info, St) ->
 -spec terminate(_Reason, st()) ->
     ok.
 
-terminate(_Reason, _St) ->
+terminate(shutdown, St) ->
+    ok = drain_queue(St);
+terminate({shutdown, _Reason}, St) ->
+    ok = drain_queue(St);
+terminate(_Error, _St) ->
     ok.
 
 -spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) ->
@@ -171,43 +186,67 @@ code_change(_Vsn, St, _Extra) ->
 
 %%
 
-handle_enqueue(Zombie, Opts, St0 = #{queue := Q}) ->
-    St1 = St0#{queue := queue:in(Zombie, Q)},
-    _ = beat({{zombie, Zombie}, enqueued}, St1),
+handle_enqueue(Zombies, Opts, St0) ->
+    St1 = lists:foldl(fun enqueue_zombie/2, St0, Zombies),
     case Opts of
         #{drain := true} ->
-            try_clean_queue(draining, St1);
+            try_clean_head(draining, St1);
         #{} ->
             try_start_timer(St1)
     end.
 
-try_drain_queue(St = #{queue := Queue}) ->
+enqueue_zombie(Zombie, St0 = #{queue := Q}) ->
+    St1 = St0#{queue := queue:in(Zombie, Q)},
+    _ = beat({{zombie, Zombie}, enqueued}, St1),
+    St1.
+
+try_drain_head(St = #{queue := Queue}) ->
     case queue:is_empty(Queue) of
         false ->
-            try_clean_queue(draining, St);
+            try_clean_head(draining, St);
         true ->
             St
     end.
 
-try_clean_queue(Mode, St0 = #{queue := Q0, registry := Registry}) ->
+try_clean_head(Mode, St0 = #{queue := Q0}) ->
     {{value, Zombie}, Q1} = queue:out(Q0),
-    case consuela_registry:unregister(Zombie, Registry) of
-        {done, ok} ->
+    case unregister(Zombie, St0) of
+        ok ->
             St1 = St0#{queue := Q1},
-            _ = beat({{zombie, Zombie}, {reaping, succeeded}}, St1),
             try_force_timer(reset_retry_state(St1));
-        {done, {error, stale}} ->
-            St1 = St0#{queue := Q1},
-            _ = beat({{zombie, Zombie}, {reaping, {skipped, stale}}}, St1),
-            try_force_timer(reset_retry_state(St1));
-        {failed, Reason} ->
-            _ = beat({{zombie, Zombie}, {reaping, {failed, Reason}}}, St0),
+        {error, _} ->
             case Mode of
                 regular ->
                     start_timer(advance_retry_state(St0));
                 draining ->
                     try_start_timer(St0)
             end
+    end.
+
+drain_queue(St = #{queue := Q}) ->
+    drain_queue(queue:to_list(Q), St).
+
+drain_queue([Zombie | Rest] = Q, St) ->
+    case unregister(Zombie, St) of
+        ok ->
+            drain_queue(Rest, St);
+        {error, _} ->
+            drain_queue(Q, St)
+    end;
+drain_queue([], _St) ->
+    ok.
+
+unregister(Zombie, St = #{registry := Registry}) ->
+    case consuela_registry:unregister(Zombie, Registry) of
+        {done, ok} ->
+            _ = beat({{zombie, Zombie}, {reaping, succeeded}}, St),
+            ok;
+        {done, {error, stale}} ->
+            _ = beat({{zombie, Zombie}, {reaping, {skipped, stale}}}, St),
+            ok;
+        {failed, Reason} ->
+            _ = beat({{zombie, Zombie}, {reaping, {failed, Reason}}}, St),
+            {error, Reason}
     end.
 
 try_force_timer(St) ->
