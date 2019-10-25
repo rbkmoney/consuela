@@ -306,7 +306,7 @@ handle_register(Name, Pid, St) ->
 handle_register_global(Name, Pid, St0 = #{registry := Registry}) ->
     Rid = erlang:unique_integer(),
     Reg = {Rid, Name, Pid},
-    Result = consuela_registry:try_register(Reg, Registry),
+    Result = consuela_registry:register(Reg, Registry),
     ok = try_drain_reaper(Result, St0),
     ok = try_enqueue_zombie(Result, register, Reg, St0),
     case Result of
@@ -336,7 +336,7 @@ handle_unregister(Name, Pid, St) ->
     end.
 
 handle_unregister_global(Reg, St0 = #{registry := Registry}) ->
-    Result = consuela_registry:try_unregister(Reg, Registry),
+    Result = consuela_registry:unregister(Reg, Registry),
     ok = try_drain_reaper(Result, St0),
     ok = try_enqueue_zombie(Result, unregister, Reg, St0),
     ok = remove_local(Reg, St0),

@@ -191,7 +191,7 @@ try_drain_queue(St = #{queue := Queue}) ->
 
 try_clean_queue(Mode, St0 = #{queue := Q0, registry := Registry}) ->
     {{value, Zombie}, Q1} = queue:out(Q0),
-    case consuela_registry:try_unregister(Zombie, Registry) of
+    case consuela_registry:unregister(Zombie, Registry) of
         {done, ok} ->
             St1 = St0#{queue := Q1},
             _ = beat({{zombie, Zombie}, {reaping, succeeded}}, St1),

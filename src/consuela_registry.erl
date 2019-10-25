@@ -24,8 +24,8 @@
 
 -export([new/3]).
 
--export([try_register/2]).
--export([try_unregister/2]).
+-export([register/2]).
+-export([unregister/2]).
 -export([lookup/2]).
 
 -export_type([namespace/0]).
@@ -49,16 +49,16 @@ new(Namespace, Session, Client) ->
 -type failure() ::
     {failed, {failed | unknown, _Reason}}.
 
--spec try_register(reg(), t()) ->
+-spec register(reg(), t()) ->
     {done, ok | {error, exists}} | {failed, failure()}.
 
--spec try_unregister(reg(), t()) ->
+-spec unregister(reg(), t()) ->
     {done, ok | {error, stale}} | {failed, failure()}.
 
 -spec lookup(name(), t()) ->
     {done, {ok, pid()} | {error, notfound}} | {failed, failure()}.
 
-try_register({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client := Client}) ->
+register({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client := Client}) ->
     ID = mk_lock_id(Name, Registry),
     try consuela_lock:hold(ID, {Rid, Pid}, Sid, Client) of
         ok ->
@@ -72,7 +72,7 @@ try_register({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client := C
             {failed, {Class, Reason}}
     end.
 
-try_unregister({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client := Client}) ->
+unregister({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client := Client}) ->
     ID = mk_lock_id(Name, Registry),
     try
         case consuela_lock:get(ID, Client) of
