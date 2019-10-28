@@ -52,7 +52,7 @@
         max_response_size => pos_integer(),     % bytes
         connect_timeout   => non_neg_integer(), % milliseconds
         recv_timeout      => non_neg_integer(), % milliseconds
-        ssl_options       => [ssl:ssl_option()]
+        ssl_options       => [ssl:tls_client_option()]
     },
     pulse          => {module(), _PulseOpts}
 }.
