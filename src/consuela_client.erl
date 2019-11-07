@@ -191,6 +191,8 @@ issue_request(Request = {Method, Url, Headers, Body}, C = #{opts := TransOpts}) 
 
 get_client_error(401) ->
     unauthorized;
+get_client_error(403) ->
+    forbidden;
 get_client_error(404) ->
     notfound.
 
