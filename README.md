@@ -77,7 +77,7 @@ Complete registry configuration looks like this:
 * **[IMPORTANT]** Please run Consul with [_dead servers cleanup_ facility
   disabled](https://learn.hashicorp.com/consul/day-2-operations/autopilot#dead-server-cleanup) as it
   may under some circumstances evict a Consul server from a quorum too early, which breaks safety
-  guarantees. See [hashicorp/consul#5922](https://github.com/hashicorp/consul/issues/5922).
+  guarantees. See [hashicorp/consul#6793](https://github.com/hashicorp/consul/issues/6793).
 
 ## Roadmap
 
