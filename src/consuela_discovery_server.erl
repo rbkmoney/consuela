@@ -199,16 +199,7 @@ get_service_health(#{service := Service, tags := Tags, client := Client}) ->
     consuela_health:get(Service, Tags, true, Client).
 
 collect_nodes(Hs) ->
-    [mk_nodename(Address) ||
-        % > https://www.consul.io/api/catalog.html#serviceaddress
-        % > `ServiceAddress` is the IP address of the service host — if empty, node address should be used
-        Address <- lists:usort([genlib:define(ServiceAddress, NodeAddress) ||
-            #{
-                node    := #{address := NodeAddress},
-                service := #{endpoint := {ServiceAddress, _}}
-            } <- Hs
-        ])
-    ].
+    [consuela_presence_session:get_nodename(H) || H <- Hs].
 
 try_connect_nodes(St = #{nodes := Nodes}) ->
     _ = genlib_pmap:map(fun (N) -> try_connect_node(N, St) end, Nodes),
@@ -219,15 +210,6 @@ try_connect_node(Node, St) ->
     Result = net_kernel:connect_node(Node),
     _ = beat({{connect, Node}, {finished, Result}}, St),
     Result.
-
-mk_nodename(Address) ->
-    % We are silently assuming that any Erlang nodes around there that we may want to connect to, share _node
-    % name_ with us. _Node name_ here is everything up to an '@'.
-    Prefix = extract_nodename_prefix(erlang:atom_to_list(erlang:node())),
-    erlang:list_to_atom(Prefix ++ "@" ++ inet:ntoa(Address)).
-
-extract_nodename_prefix(Nodename) ->
-    lists:takewhile(fun (C) -> C /= $@ end, Nodename).
 
 handle_node_up(Node, St = #{nodes := Nodes}) ->
     % If we succeeded contacting all nodes known to Consul then the next timer timeout will be _Idle_ ms

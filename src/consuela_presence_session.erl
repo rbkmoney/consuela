@@ -28,6 +28,8 @@
 -export([start_link/4]).
 -export([get_check_id/1]).
 
+-export([get_nodename/1]).
+
 -export_type([name/0]).
 -export_type([opts/0]).
 
@@ -82,6 +84,33 @@ get_check_id(Name) ->
 
 mk_local_ref(Name) ->
     erlang:binary_to_atom(<<"$consuela_presence_session/", Name/binary>>, latin1).
+
+%%
+
+-spec get_nodename(consuela_health:t()) ->
+    node().
+get_nodename(#{
+    service := #{metadata := #{?MD_NODENAME := Node}}
+}) ->
+    decode_node(Node);
+get_nodename(#{
+    node    := #{address := NodeAddress},
+    service := #{endpoint := {ServiceAddress, _}}
+}) ->
+    % Best effort heuristics.
+    % > https://www.consul.io/api/catalog.html#serviceaddress
+    % > `ServiceAddress` is the IP address of the service host — if empty, node address should be used
+    Address = genlib:define(ServiceAddress, NodeAddress),
+    mk_nodename(Address).
+
+mk_nodename(Address) ->
+    % We are silently assuming that any Erlang nodes around there that we may want to connect to, share _node
+    % name_ with us. _Node name_ here is everything up to an '@'.
+    Prefix = extract_nodename_prefix(erlang:atom_to_list(erlang:node())),
+    erlang:list_to_atom(Prefix ++ "@" ++ inet:ntoa(Address)).
+
+extract_nodename_prefix(Nodename) ->
+    lists:takewhile(fun (C) -> C /= $@ end, Nodename).
 
 %%
 
