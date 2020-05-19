@@ -8,6 +8,8 @@
 -type opts() :: #{
     name         := consuela_health:service_name(),
     address      => inet:ip_address(),
+    service_id   => consuela_health:service_id(),
+    service_tags => [consuela_health:tag()],
     consul       := consul_opts(),
     server_opts  => consuela_presence_server:opts(), % #{} by default
     session_opts => consuela_presence_session:opts(), % #{} by default
@@ -30,9 +32,16 @@
     {ok, pid()} | {error, _}.
 
 start_link(Opts) ->
+    {Hostname, Address} = guess_host_address(),
     Name = maps:get(name, Opts),
-    Address = maps:get(address, Opts, guess_host_address()),
+    DefaultServiceID = erlang:iolist_to_binary([Name, $-, Hostname]),
     Client = mk_consul_client(maps:get(consul, Opts)),
+    Service = #{
+        name => Name,
+        id => maps:get(service_id, Opts, DefaultServiceID),
+        address => maps:get(address, Opts, Address),
+        tags => maps:get(service_tags, Opts, [])
+    },
     genlib_adhoc_supervisor:start_link(
         #{strategy => one_for_one, intensity => 20, period => 5},
         [
@@ -41,8 +50,7 @@ start_link(Opts) ->
                 #{
                     id    => {Name, session},
                     start => {consuela_presence_session, start_link, [
-                        Name,
-                        Address,
+                        Service,
                         Name,
                         Client,
                         maps:get(session_opts, Opts, #{})
@@ -69,15 +77,15 @@ stop(Pid) ->
 %%
 
 -spec guess_host_address() ->
-    inet:ip_address().
+    {inet:hostname(), inet:ip_address()}.
 
 guess_host_address() ->
     guess_host_address([distribution, hostname]).
 
 guess_host_address([Method | Rest]) ->
     case do_guess_host_address(Method) of
-        Address when is_tuple(Address) ->
-            Address;
+        {Hostname, Address} ->
+            {Hostname, Address};
         undefined ->
             guess_host_address(Rest)
     end.
@@ -102,11 +110,17 @@ do_guess_host_address(hostname) ->
 get_host_address(Hostname) ->
     case inet:parse_address(Hostname) of
         {ok, Address} ->
-            Address;
+            % TODO Seems wasteful
+            case inet:gethostbyaddr(Hostname) of
+                {ok, #hostent{h_name = HostnameRev}} ->
+                    {HostnameRev, Address};
+                {error, _} ->
+                    {Hostname, Address}
+            end;
         {error, einval} ->
             case inet:gethostbyname(Hostname) of
                 {ok, #hostent{h_addr_list = [Address | _]}} ->
-                    Address;
+                    {Hostname, Address};
                 {error, _} ->
                     undefined
             end

@@ -55,6 +55,7 @@
 -export_type([check_id/0]).
 -export_type([node_name/0]).
 -export_type([tag/0]).
+-export_type([metadata/0]).
 -export_type([endpoint/0]).
 -export_type([status/0]).
 -export_type([t/0]).
@@ -87,6 +88,7 @@ get(ServiceName, Tags, Passing, Client) ->
     name     := service_name(),
     id       => service_id(),
     tags     := [tag()],
+    metadata => metadata(),
     endpoint => endpoint(),
     checks   => [check_params()]
 }.
@@ -151,7 +153,8 @@ encode_service_params(#{
         },
         [
             encode_endpoint(maps:get(endpoint, V, undefined)),
-            encode_checks(maps:get(checks, V, undefined))
+            encode_checks(maps:get(checks, V, undefined)),
+            encode_metadata(maps:get(metadata, V, #{}))
         ]
     ).
 
@@ -179,6 +182,9 @@ encode_address(V) ->
 
 encode_port(V) ->
     encode_integer(V).
+
+encode_metadata(V) when is_map(V) ->
+    #{<<"Meta">> => V}.
 
 encode_checks(undefined) ->
     #{};

@@ -143,8 +143,8 @@ request(Method, Resource, Content, C) ->
     case issue_request(Request, C) of
         {ok, Status, _Headers, RespBody} when Status >= 200, Status < 300 ->
             decode_response(RespBody);
-        {ok, Status, _Headers, _RespBody} when Status >= 400, Status < 500 ->
-            {error, get_client_error(Status)};
+        {ok, Status, _Headers, RespBody} when Status >= 400, Status < 500 ->
+            {error, get_client_error(Status, RespBody)};
         {ok, Status, _Headers, RespBody} when Status >= 500, Status < 600 ->
             {error, {
                 get_server_error_class(Status),
@@ -189,11 +189,11 @@ issue_request(Request = {Method, Url, Headers, Body}, C = #{opts := TransOpts}) 
     _ = beat({result, Result}, C),
     Result.
 
-get_client_error(401) ->
+get_client_error(401, _) ->
     unauthorized;
-get_client_error(403) ->
+get_client_error(403, _) ->
     forbidden;
-get_client_error(404) ->
+get_client_error(404, _) ->
     notfound.
 
 get_server_error_class(Code) when

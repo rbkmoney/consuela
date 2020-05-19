@@ -13,13 +13,22 @@
 
 -type seconds() :: non_neg_integer().
 
+-type service() :: #{
+    id       := consuela_health:service_id(),
+    name     := name(),
+    address  := inet:ip_address(),
+    tags     => [consuela_health:tag()]
+}.
+
 -type opts() :: #{
     interval => seconds(), % 5 by default
     pulse    => {module(), _PulseOpts}
 }.
 
--export([start_link/5]).
+-export([start_link/4]).
 -export([get_check_id/1]).
+
+-export([get_nodename/1]).
 
 -export_type([name/0]).
 -export_type([opts/0]).
@@ -49,11 +58,19 @@
 
 %%
 
--spec start_link(name(), inet:ip_address(), consuela_presence_server:ref(), client(), opts()) ->
+%% Only alphanumeric sequences with dashes and underscores allowed for metadata
+%% keys.
+%% See: https://github.com/hashicorp/consul/blob/v1.5.3/agent/structs/structs.go#L104
+
+-define(MD_NODENAME, <<"consuela-erlang-nodename">>).
+
+%%
+
+-spec start_link(service(), consuela_presence_server:ref(), client(), opts()) ->
     {ok, pid()} | {error, _}.
 
-start_link(Name, Address, ServerRef, Client, Opts) ->
-    St = mk_state(Name, Address, ServerRef, Client, Opts),
+start_link(Service = #{name := Name}, ServerRef, Client, Opts) ->
+    St = mk_state(Service, ServerRef, Client, Opts),
     gen_server:start_link({local, mk_local_ref(Name)}, ?MODULE, St, []).
 
 -spec get_check_id(name()) ->
@@ -70,11 +87,39 @@ mk_local_ref(Name) ->
 
 %%
 
+-spec get_nodename(consuela_health:t()) ->
+    node().
+get_nodename(#{
+    service := #{metadata := #{?MD_NODENAME := Node}}
+}) ->
+    decode_node(Node);
+get_nodename(#{
+    node    := #{address := NodeAddress},
+    service := #{endpoint := {ServiceAddress, _}}
+}) ->
+    % Best effort heuristics.
+    % > https://www.consul.io/api/catalog.html#serviceaddress
+    % > `ServiceAddress` is the IP address of the service host — if empty, node address should be used
+    Address = genlib:define(ServiceAddress, NodeAddress),
+    mk_nodename(Address).
+
+mk_nodename(Address) ->
+    % We are silently assuming that any Erlang nodes around there that we may want to connect to, share _node
+    % name_ with us. _Node name_ here is everything up to an '@'.
+    Prefix = extract_nodename_prefix(erlang:atom_to_list(erlang:node())),
+    erlang:list_to_atom(Prefix ++ "@" ++ inet:ntoa(Address)).
+
+extract_nodename_prefix(Nodename) ->
+    lists:takewhile(fun (C) -> C /= $@ end, Nodename).
+
+%%
+
 -type st() :: #{
+    id       := consuela_health:service_id(),
     name     := name(),
     address  := inet:ip_address(),
     server   := consuela_health:endpoint(),
-    check_id := consuela_health:check_id(),
+    tags     => [consuela_health:tag()],
     interval := non_neg_integer(),
     client   := client(),
     pulse    := {module(), _PulseOpts}
@@ -82,16 +127,13 @@ mk_local_ref(Name) ->
 
 -type from() :: {pid(), reference()}.
 
--spec mk_state(name(), inet:ip_address(), consuela_presence_server:ref(), client(), opts()) ->
+-spec mk_state(service(), consuela_presence_server:ref(), client(), opts()) ->
     st().
 
-mk_state(Name, Address, ServerRef, Client, Opts) ->
+mk_state(Service, ServerRef, Client, Opts) ->
     {ok, Endpoint} = consuela_presence_server:get_endpoint(ServerRef),
-    #{
-        name     => Name,
-        address  => Address,
+    Service#{
         server   => Endpoint,
-        check_id => <<Name/binary, ":presence:tcp">>,
         interval => maps:get(interval, Opts, 5),
         client   => Client,
         pulse    => maps:get(pulse, Opts, {?MODULE, []})
@@ -109,8 +151,8 @@ init(St = #{name := Name}) ->
 -spec handle_call(_Call, from(), st()) ->
     {reply, _, st(), hibernate} | {noreply, st(), hibernate}.
 
-handle_call(get_check_id, _From, St = #{check_id := CheckID}) ->
-    {reply, CheckID, St, hibernate};
+handle_call(get_check_id, _From, St = #{id := ServiceID}) ->
+    {reply, mk_check_name(ServiceID), St, hibernate};
 handle_call(Call, From, St) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
     {noreply, St, hibernate}.
@@ -143,22 +185,26 @@ terminate(Reason, St = #{name := Name}) ->
 code_change(_Vsn, St, _Extra) ->
     {ok, St}.
 
-register_service(#{
+register_service(St = #{
+    id := ServiceID,
     name := Name,
     address := Address,
-    check_id := CheckID,
     server := {_, Port},
     interval := Interval,
     client := Client
 }) ->
     ServiceParams = #{
+        id       => ServiceID,
         name     => Name,
         endpoint => {Address, 0},
-        tags     => [], % TODO
+        tags     => maps:get(tags, St, []),
+        metadata => #{
+            ?MD_NODENAME => encode_node(erlang:node())
+        },
         checks   => [
             #{
-                id      => CheckID,
-                name    => CheckID,
+                id      => mk_check_name(ServiceID),
+                name    => mk_check_name(Name),
                 type    => {tcp, {Address, Port}, Interval},
                 initial => passing % So we would be able to start discovery right away
                 % TODO
@@ -169,9 +215,20 @@ register_service(#{
     ok = consuela_health:register(ServiceParams, Client),
     ok.
 
-deregister_service(#{name := Name, client := Client}) ->
-    ok = consuela_health:deregister(Name, Client),
+deregister_service(#{id := ServiceID, client := Client}) ->
+    ok = consuela_health:deregister(ServiceID, Client),
     ok.
+
+mk_check_name(Name) ->
+    <<Name/binary, ":presence:tcp">>.
+
+encode_node(V) ->
+    erlang:atom_to_binary(V, latin1).
+
+decode_node(V) ->
+    % TODO
+    % Potentially unsafe.
+    erlang:binary_to_atom(V, latin1).
 
 %%
 
