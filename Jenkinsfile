@@ -18,6 +18,6 @@ build('consuela', 'docker-host', finalHook) {
     pipeErlangLib = load("${env.JENKINS_LIB}/pipeErlangLib.groovy")
   }
 
-  pipeErlangLib.runPipe(false)
+  pipeErlangLib.runPipe()
 }
 
