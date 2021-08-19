@@ -55,7 +55,7 @@ services:
     working_dir:
       $PWD
     command:
-      /usr/bin/epmd
+      /usr/local/bin/epmd
 
 networks:
   consul:
