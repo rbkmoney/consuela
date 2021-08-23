@@ -5,27 +5,27 @@
 
 %%
 
--type id()       :: uuid().
--type name()     :: binary().
+-type id() :: uuid().
+-type name() :: binary().
 -type nodename() :: inet:hostname().
--type ttl()      :: seconds().
--type check()    :: consuela_health:check_id().
--type delay()    :: seconds().
+-type ttl() :: seconds().
+-type check() :: consuela_health:check_id().
+-type delay() :: seconds().
 -type behavior() :: release | delete.
--type indexes()  :: #{create | modify => integer()}.
+-type indexes() :: #{create | modify => integer()}.
 
--type uuid()     :: binary().
--type seconds()  :: non_neg_integer().
+-type uuid() :: binary().
+-type seconds() :: non_neg_integer().
 
 -type t() :: #{
-    id         := id(),
-    name       := name(),
-    node       := nodename(),
-    checks     := [check()],
-    ttl        := ttl(),
+    id := id(),
+    name := name(),
+    node := nodename(),
+    checks := [check()],
+    ttl := ttl(),
     lock_delay := delay(),
-    behavior   := behavior(),
-    indexes    := indexes()
+    behavior := behavior(),
+    indexes := indexes()
 }.
 
 -export_type([id/0]).
@@ -45,25 +45,21 @@
 %%
 
 -type opts() :: #{
-    checks     => [check()], % [] by default
+    % [] by default
+    checks => [check()],
     lock_delay => delay(),
-    behavior   => behavior()
+    behavior => behavior()
 }.
 
--spec create(name(), nodename(), ttl(), consuela_client:t()) ->
-    {ok, id()}.
+-spec create(name(), nodename(), ttl(), consuela_client:t()) -> {ok, id()}.
 
--spec create(name(), nodename(), ttl(), opts(), consuela_client:t()) ->
-    {ok, id()}.
+-spec create(name(), nodename(), ttl(), opts(), consuela_client:t()) -> {ok, id()}.
 
--spec get(id(), consuela_client:t()) ->
-    {ok, t()} | {error, notfound}.
+-spec get(id(), consuela_client:t()) -> {ok, t()} | {error, notfound}.
 
--spec destroy(id(), consuela_client:t()) ->
-    ok.
+-spec destroy(id(), consuela_client:t()) -> ok.
 
--spec renew(id(), consuela_client:t()) ->
-    {ok, t()}.
+-spec renew(id(), consuela_client:t()) -> {ok, t()}.
 
 create(Name, Node, TTL, Client) ->
     create(Name, Node, TTL, #{}, Client).
@@ -85,9 +81,9 @@ mk_params(Name, Node, TTL, Opts) ->
     % testing. We were able to trigger session invalidation when consuela app was alive and stable, session
     % had 10 seconds more to live, even the node was on the majority side of a cluster.
     Params = #{
-        name   => Name,
-        node   => Node,
-        ttl    => TTL,
+        name => Name,
+        node => Node,
+        ttl => TTL,
         checks => []
     },
     maps:merge(Params, Opts).
@@ -126,15 +122,15 @@ renew(ID, Client) ->
 encode_params(Params = #{name := Name, node := Node, ttl := TTL}) ->
     maps:fold(
         fun
-            (behavior, V, R)   -> R#{<<"Behavior">> => encode_behavior(V)};
+            (behavior, V, R) -> R#{<<"Behavior">> => encode_behavior(V)};
             (lock_delay, V, R) -> R#{<<"LockDelay">> => encode_seconds(V)};
-            (checks, V, R)     -> R#{<<"Checks">> => encode_checks(V)};
-            (_, _, R)          -> R
+            (checks, V, R) -> R#{<<"Checks">> => encode_checks(V)};
+            (_, _, R) -> R
         end,
         #{
-            <<"Name">>     => encode_name(Name),
-            <<"Node">>     => encode_nodename(Node),
-            <<"TTL">>      => encode_seconds(TTL)
+            <<"Name">> => encode_name(Name),
+            <<"Node">> => encode_nodename(Node),
+            <<"TTL">> => encode_seconds(TTL)
         },
         Params
     ).
@@ -165,7 +161,9 @@ encode_duration(U, V) when is_integer(V), V >= 0 ->
     consuela_duration:format(V, U).
 
 encode_string(V) when is_list(V) ->
-    case unicode:characters_to_binary(V) of B when is_binary(B) -> B end.
+    case unicode:characters_to_binary(V) of
+        B when is_binary(B) -> B
+    end.
 
 encode_binary(V) when is_binary(V) ->
     V.
@@ -176,25 +174,25 @@ decode_session_id(#{<<"ID">> := ID}) ->
     decode_id(ID).
 
 decode_session(#{
-    <<"ID">>          := ID,
-    <<"Name">>        := Name,
-    <<"Node">>        := Node,
-    <<"Behavior">>    := Behavior,
-    <<"Checks">>      := Checks,
-    <<"TTL">>         := TTL,
-    <<"LockDelay">>   := LockDelay,
+    <<"ID">> := ID,
+    <<"Name">> := Name,
+    <<"Node">> := Node,
+    <<"Behavior">> := Behavior,
+    <<"Checks">> := Checks,
+    <<"TTL">> := TTL,
+    <<"LockDelay">> := LockDelay,
     <<"CreateIndex">> := CreateIndex,
     <<"ModifyIndex">> := ModifyIndex
 }) ->
     #{
-        id         => decode_id(ID),
-        name       => decode_name(Name),
-        node       => decode_nodename(Node),
-        behavior   => decode_behavior(Behavior),
-        checks     => decode_checks(Checks),
-        ttl        => decode_seconds(TTL),
+        id => decode_id(ID),
+        name => decode_name(Name),
+        node => decode_nodename(Node),
+        behavior => decode_behavior(Behavior),
+        checks => decode_checks(Checks),
+        ttl => decode_seconds(TTL),
         lock_delay => decode_seconds(LockDelay),
-        indexes    => #{
+        indexes => #{
             create => decode_index(CreateIndex),
             modify => decode_index(ModifyIndex)
         }
@@ -231,7 +229,9 @@ decode_duration(U, V) ->
     consuela_duration:parse(V) div consuela_duration:factor(U).
 
 decode_string(V) when is_binary(V) ->
-    case unicode:characters_to_list(V) of S when is_list(S) -> S end.
+    case unicode:characters_to_list(V) of
+        S when is_list(S) -> S
+    end.
 
 decode_integer(V) when is_integer(V) ->
     V.

@@ -47,31 +47,27 @@
 %%
 
 -type beat() ::
-    {{warden, name()}, {started | stopped, pid()}} |
-    {{leader, name()}, {started, pid()} | {down, pid() | undefined, _Reason}} |
-    {{timer, reference()}, {started, _Msg, timeout()} | fired} |
-    {{monitor, reference()}, set | fired} |
-    {unexpected, {{call, from()} | cast | info, _Msg}}.
+    {{warden, name()}, {started | stopped, pid()}}
+    | {{leader, name()}, {started, pid()} | {down, pid() | undefined, _Reason}}
+    | {{timer, reference()}, {started, _Msg, timeout()} | fired}
+    | {{monitor, reference()}, set | fired}
+    | {unexpected, {{call, from()} | cast | info, _Msg}}.
 
 -export_type([beat/0]).
 
--callback handle_beat(beat(), _PulseOpts) ->
-    _.
+-callback handle_beat(beat(), _PulseOpts) -> _.
 
 -export([handle_beat/2]).
 
 %%
 
--spec start_link(name(), module(), _Args, opts()) ->
-    {ok, pid()} | {error, Reason} when
-        Reason :: {shutdown, term()} | term().
-
+-spec start_link(name(), module(), _Args, opts()) -> {ok, pid()} | {error, Reason} when
+    Reason :: {shutdown, term()} | term().
 start_link(Name, Module, Args, Opts) ->
     gen_server:start_link(?MODULE, {Name, {Module, Args}, Opts}, []).
 
 -spec which_children(name()) ->
     [{_ChildID | undefined, pid() | restarting | undefined, worker | supervisor, [module()] | dynamic}].
-
 which_children(Name) ->
     supervisor:which_children(mk_reg_name(Name)).
 
@@ -80,68 +76,58 @@ which_children(Name) ->
 -type from() :: {pid(), reference()}.
 
 -type st() :: #{
-    name           := name(),
-    modargs        := modargs(_),
-    state          := {handoff, _SupervisorSt} | takeover | {monitor, pid(), reference()},
-    context        := init | handle,
+    name := name(),
+    modargs := modargs(_),
+    state := {handoff, _SupervisorSt} | takeover | {monitor, pid(), reference()},
+    context := init | handle,
     retry_strategy := genlib_retry:strategy(),
-    retry_state    => genlib_retry:strategy(),
-    tref           => reference(),
-    pulse          := {module(), _PulseOpts}
+    retry_state => genlib_retry:strategy(),
+    tref => reference(),
+    pulse := {module(), _PulseOpts}
 }.
 
 -spec init({name(), modargs(_), opts()}) ->
-    {ok, st() | _SupervisorSt} |
-    {ok, st() | _SupervisorSt, timeout() | {continue, _} | hibernate} |
-    {stop, _Reason} |
-    ignore.
-
+    {ok, st() | _SupervisorSt}
+    | {ok, st() | _SupervisorSt, timeout() | {continue, _} | hibernate}
+    | {stop, _Reason}
+    | ignore.
 init({Name, ModArgs, Opts}) ->
     St = mk_state(Name, ModArgs, Opts),
     _ = beat({{warden, Name}, {started, self()}}, St),
     handle_takeover(reset_retry_state(St)).
 
--spec mk_state(name(), modargs(_), opts()) ->
-    st().
-
+-spec mk_state(name(), modargs(_), opts()) -> st().
 mk_state(Name, ModArgs, Opts) ->
     #{
-        name           => Name,
-        modargs        => ModArgs,
-        state          => takeover,
-        context        => init,
-        pulse          => maps:get(pulse, Opts, {?MODULE, []}),
+        name => Name,
+        modargs => ModArgs,
+        state => takeover,
+        context => init,
+        pulse => maps:get(pulse, Opts, {?MODULE, []}),
         retry_strategy => maps:get(retry, Opts, genlib_retry:exponential({max_total_timeout, 30 * 1000}, 2, 1000, 5000))
     }.
 
--spec handle_continue(handoff, st()) ->
-    no_return().
-
+-spec handle_continue(handoff, st()) -> no_return().
 handle_continue(handoff, St) ->
     finish_handoff(St).
 
--spec handle_call(_Call, from(), st()) ->
-    {noreply, st(), hibernate}.
-
+-spec handle_call(_Call, from(), st()) -> {noreply, st(), hibernate}.
 handle_call(Call, From, St) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
     {noreply, St, hibernate}.
 
--spec handle_cast(_Cast, st()) ->
-    {noreply, st(), hibernate}.
-
+-spec handle_cast(_Cast, st()) -> {noreply, st(), hibernate}.
 handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
     {noreply, St, hibernate}.
 
 -type info() ::
-    {timeout, reference(), takeover} |
-    {'DOWN', reference(), process, pid(), _Reason}.
+    {timeout, reference(), takeover}
+    | {'DOWN', reference(), process, pid(), _Reason}.
 
 -spec handle_info(info(), st()) ->
-    {noreply, st(), hibernate} |
-    {stop, _Reason, st()}.
-
+    {noreply, st(), hibernate}
+    | {stop, _Reason, st()}.
 handle_info({timeout, TRef, Msg}, St) ->
     _ = beat({{timer, TRef}, fired}, St),
     handle_timeout(TRef, Msg, St);
@@ -152,18 +138,15 @@ handle_info(Msg, St) ->
     _ = beat({unexpected, {info, Msg}}, St),
     ok(St).
 
--spec ok(st()) ->
-    {ok | noreply, st(), hibernate}.
-
+-spec ok(st()) -> {ok | noreply, st(), hibernate}.
 ok(St = #{context := init}) ->
     {ok, St#{context := handle}, hibernate};
 ok(St = #{context := handle}) ->
     {noreply, St, hibernate}.
 
 -spec stop(Reason, st()) ->
-    {stop, Reason} |
-    {stop, Reason, st()}.
-
+    {stop, Reason}
+    | {stop, Reason, st()}.
 stop(Reason, _St = #{context := init}) ->
     {stop, Reason};
 stop(Reason, St = #{context := handle}) ->
@@ -202,15 +185,11 @@ handle_leader_down(MRef, Pid, Reason, St0 = #{state := {monitor, Pid, MRef}, nam
     % Precaution against too tight monitor-takeover loops
     defer_takeover(St1).
 
--spec terminate(_Reason, st()) ->
-    ok.
-
+-spec terminate(_Reason, st()) -> ok.
 terminate(_Reason, _St) ->
     ok.
 
--spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) ->
-    {ok, st()}.
-
+-spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) -> {ok, st()}.
 code_change(_Vsn, St, _Extra) ->
     {ok, St}.
 
@@ -268,24 +247,18 @@ reset_retry_state(St0 = #{retry_strategy := Retry}) ->
 
 %%
 
--spec mk_reg_name(name()) ->
-    {via, atom(), name()}.
-
+-spec mk_reg_name(name()) -> {via, atom(), name()}.
 mk_reg_name(Name) ->
     {via, consuela, Name}.
 
 %%
 
--spec beat(beat(), st()) ->
-    _.
-
+-spec beat(beat(), st()) -> _.
 beat(Beat, #{pulse := {Module, PulseOpts}}) ->
     % TODO handle errors?
     Module:handle_beat(Beat, PulseOpts).
 
--spec handle_beat(beat(), [trace]) ->
-    ok.
-
+-spec handle_beat(beat(), [trace]) -> ok.
 handle_beat(Beat, [trace]) ->
     logger:debug("[~p] ~p", [?MODULE, Beat]);
 handle_beat(_Beat, []) ->

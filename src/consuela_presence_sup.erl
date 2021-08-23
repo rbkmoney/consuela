@@ -6,19 +6,23 @@
 %%
 
 -type opts() :: #{
-    name         := consuela_health:service_name(),
-    address      => inet:ip_address(),
-    service_id   => consuela_health:service_id(),
+    name := consuela_health:service_name(),
+    address => inet:ip_address(),
+    service_id => consuela_health:service_id(),
     service_tags => [consuela_health:tag()],
-    consul       := consul_opts(),
-    server_opts  => consuela_presence_server:opts(), % #{} by default
-    session_opts => consuela_presence_session:opts(), % #{} by default
-    shutdown     => timeout() % if not specified uses supervisor default of 5000 ms
+    consul := consul_opts(),
+    % #{} by default
+    server_opts => consuela_presence_server:opts(),
+    % #{} by default
+    session_opts => consuela_presence_session:opts(),
+    % if not specified uses supervisor default of 5000 ms
+    shutdown => timeout()
 }.
 
 -type consul_opts() :: #{
-    url  := consuela_client:url(),
-    opts => consuela_client:opts() % #{} by default
+    url := consuela_client:url(),
+    % #{} by default
+    opts => consuela_client:opts()
 }.
 
 -export([start_link/1]).
@@ -28,9 +32,7 @@
 
 %%
 
--spec start_link(opts()) ->
-    {ok, pid()} | {error, _}.
-
+-spec start_link(opts()) -> {ok, pid()} | {error, _}.
 start_link(Opts) ->
     {Hostname, Address} = guess_host_address(),
     Name = maps:get(name, Opts),
@@ -48,37 +50,32 @@ start_link(Opts) ->
             consuela_presence_server:child_spec(Name, maps:get(server_opts, Opts, #{})),
             maps:merge(
                 #{
-                    id    => {Name, session},
-                    start => {consuela_presence_session, start_link, [
-                        Service,
-                        Name,
-                        Client,
-                        maps:get(session_opts, Opts, #{})
-                    ]}
+                    id => {Name, session},
+                    start =>
+                        {consuela_presence_session, start_link, [
+                            Service,
+                            Name,
+                            Client,
+                            maps:get(session_opts, Opts, #{})
+                        ]}
                 },
                 maps:with([shutdown], Opts)
             )
         ]
     ).
 
--spec mk_consul_client(consul_opts()) ->
-    consuela_client:t().
-
+-spec mk_consul_client(consul_opts()) -> consuela_client:t().
 mk_consul_client(Opts) ->
     Url = maps:get(url, Opts),
     consuela_client:new(Url, maps:get(opts, Opts, #{})).
 
--spec stop(pid()) ->
-    ok.
-
+-spec stop(pid()) -> ok.
 stop(Pid) ->
     proc_lib:stop(Pid).
 
 %%
 
--spec guess_host_address() ->
-    {inet:hostname(), inet:ip_address()}.
-
+-spec guess_host_address() -> {inet:hostname(), inet:ip_address()}.
 guess_host_address() ->
     guess_host_address([distribution, hostname]).
 

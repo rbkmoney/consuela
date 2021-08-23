@@ -6,17 +6,18 @@
 %% api
 
 -type datacenter() :: iodata().
--type token()      :: iodata().
--type url()        :: iodata().
--type query()      :: [{binary(), binary() | true}]. % cow_qs:qs_vals()
--type headers()    :: [{binary(), {binary(), list({binary(), binary()} | binary())}}].
+-type token() :: iodata().
+-type url() :: iodata().
+% cow_qs:qs_vals()
+-type query() :: [{binary(), binary() | true}].
+-type headers() :: [{binary(), {binary(), list({binary(), binary()} | binary())}}].
 
 -opaque t() :: #{
-    url     := binary(),
-    query   := query(),
+    url := binary(),
+    query := query(),
     headers := headers(),
-    opts    := list(_TODO),
-    pulse   := {module(), _PulseOpts}
+    opts := list(_TODO),
+    pulse := {module(), _PulseOpts}
 }.
 
 -export_type([url/0]).
@@ -31,11 +32,10 @@
 %% pulse
 
 -type beat() ::
-    {request, {method(), binary(), headers(), binary()}} |
-    {result, {ok, 100..599, headers(), binary()} | {error, term()}}.
+    {request, {method(), binary(), headers(), binary()}}
+    | {result, {ok, 100..599, headers(), binary()} | {error, term()}}.
 
--callback handle_beat(beat(), _Opts) ->
-    _.
+-callback handle_beat(beat(), _Opts) -> _.
 
 -export_type([beat/0]).
 
@@ -44,24 +44,25 @@
 %% api
 
 -type opts() :: #{
-    datacenter     => datacenter(),
-    acl            => token(),
+    datacenter => datacenter(),
+    acl => token(),
     transport_opts => #{
-        pool              => _Name,
-        max_connections   => non_neg_integer(),
-        max_response_size => pos_integer(),     % bytes
-        connect_timeout   => non_neg_integer(), % milliseconds
-        recv_timeout      => non_neg_integer(), % milliseconds
-        ssl_options       => [ssl:tls_client_option()]
+        pool => _Name,
+        max_connections => non_neg_integer(),
+        % bytes
+        max_response_size => pos_integer(),
+        % milliseconds
+        connect_timeout => non_neg_integer(),
+        % milliseconds
+        recv_timeout => non_neg_integer(),
+        ssl_options => [ssl:tls_client_option()]
     },
-    pulse          => {module(), _PulseOpts}
+    pulse => {module(), _PulseOpts}
 }.
 
 -export_type([opts/0]).
 
--spec new(url(), opts()) ->
-    t().
-
+-spec new(url(), opts()) -> t().
 new(Url, Opts) ->
     maps:fold(
         fun
@@ -79,11 +80,11 @@ new(Url, Opts) ->
                 C#{pulse := V}
         end,
         #{
-            url     => to_binary(Url),
-            query   => [],
+            url => to_binary(Url),
+            query => [],
             headers => [],
-            opts    => [with_body],
-            pulse   => {?MODULE, []}
+            opts => [with_body],
+            pulse => {?MODULE, []}
         },
         Opts
     ).
@@ -98,10 +99,7 @@ mk_transport_opts(Opts, TransOpts0) ->
             (max_response_size, V, TransOpts) when is_integer(V), V > 0 ->
                 set_opt(max_body, V, TransOpts);
             (Opt, V, TransOpts) when
-                Opt == max_connections;
-                Opt == connect_timeout;
-                Opt == recv_timeout,
-                is_integer(V), V > 0
+                Opt == max_connections; Opt == connect_timeout; Opt == recv_timeout, is_integer(V), V > 0
             ->
                 set_opt(Opt, V, TransOpts)
         end,
@@ -114,29 +112,25 @@ set_opt(Name, V, Opts) ->
 
 %%
 
--type method()   :: get | post | put | delete.
+-type method() :: get | post | put | delete.
 -type resource() :: iodata() | {iodata(), query()}.
--type content()  :: jsx:json_term() | {raw, iodata()} | undefined.
+-type content() :: jsx:json_term() | {raw, iodata()} | undefined.
 
 -type reason() ::
-    unauthorized                   |
-    notfound                       |
-    {error_class(), error_cause()} .
+    unauthorized
+    | notfound
+    | {error_class(), error_cause()}.
 
 -type error_class() :: failed | unknown.
 -type error_cause() ::
-    {server_error, {500..599, binary()}} |
-    {transport_error, term()}.
+    {server_error, {500..599, binary()}}
+    | {transport_error, term()}.
 
--spec request(method(), resource(), t()) ->
-    {ok, jsx:json_term() | undefined} | {error, reason()}.
-
+-spec request(method(), resource(), t()) -> {ok, jsx:json_term() | undefined} | {error, reason()}.
 request(Method, Resource, C) ->
     request(Method, Resource, undefined, C).
 
--spec request(method(), resource(), content(), t()) ->
-    {ok, jsx:json_term() | undefined} | {error, reason()}.
-
+-spec request(method(), resource(), content(), t()) -> {ok, jsx:json_term() | undefined} | {error, reason()}.
 request(Method, Resource, Content, C) ->
     Url = mk_request_url(Resource, C),
     Request = {Method, Url, mk_headers(Content, C), mk_body(Content)},
@@ -153,8 +147,8 @@ request(Method, Resource, Content, C) ->
         {error, Reason} ->
             {error, {
                 get_transport_error_class(Reason),
-                {transport_error, Reason}}
-            }
+                {transport_error, Reason}
+            }}
     end.
 
 decode_response(<<>>) ->
@@ -198,7 +192,7 @@ get_client_error(404, _) ->
 
 get_server_error_class(Code) when
     Code == 501 orelse
-    Code == 503
+        Code == 503
 ->
     failed;
 get_server_error_class(_) ->
@@ -206,10 +200,10 @@ get_server_error_class(_) ->
 
 get_transport_error_class(Reason) when
     Reason == nxdomain orelse
-    Reason == enetdown orelse
-    Reason == enetunreach orelse
-    Reason == econnrefused orelse
-    Reason == connect_timeout
+        Reason == enetdown orelse
+        Reason == enetunreach orelse
+        Reason == econnrefused orelse
+        Reason == connect_timeout
 ->
     failed;
 get_transport_error_class(_) ->
@@ -220,18 +214,14 @@ to_binary(V) ->
 
 %%
 
--spec beat(beat(), t()) ->
-    _.
-
+-spec beat(beat(), t()) -> _.
 beat(Beat, #{pulse := {Module, Opts}}) ->
     % TODO handle errors?
     Module:handle_beat(Beat, Opts).
 
 %% pulse
 
--spec handle_beat(beat(), [trace]) ->
-    ok.
-
+-spec handle_beat(beat(), [trace]) -> ok.
 handle_beat(Beat, [trace]) ->
     logger:debug("[~p] ~p", [?MODULE, Beat]);
 handle_beat(_Beat, _) ->

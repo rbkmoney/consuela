@@ -6,15 +6,18 @@
 %%
 
 -type opts() :: #{
-    name   := consuela_discovery_server:service(),
-    tags   => [consuela_discovery_server:tag()], % [] by default
+    name := consuela_discovery_server:service(),
+    % [] by default
+    tags => [consuela_discovery_server:tag()],
     consul := consul_opts(),
-    opts   => consuela_discovery_server:opts() % #{} by default
+    % #{} by default
+    opts => consuela_discovery_server:opts()
 }.
 
 -type consul_opts() :: #{
-    url  := consuela_client:url(),
-    opts => consuela_client:opts() % #{} by default
+    url := consuela_client:url(),
+    % #{} by default
+    opts => consuela_client:opts()
 }.
 
 -export([start_link/1]).
@@ -24,9 +27,7 @@
 
 %%
 
--spec start_link(opts()) ->
-    {ok, pid()} | {error, _Reason}.
-
+-spec start_link(opts()) -> {ok, pid()} | {error, _Reason}.
 start_link(Opts) ->
     Name = maps:get(name, Opts),
     Tags = maps:get(tags, Opts, []),
@@ -36,21 +37,17 @@ start_link(Opts) ->
         #{strategy => one_for_one, intensity => 20, period => 5},
         [
             #{
-                id    => discovery,
+                id => discovery,
                 start => {consuela_discovery_server, start_link, [Name, Tags, Client, DiscoveryOpts]}
             }
         ]
     ).
 
--spec mk_consul_client(consul_opts()) ->
-    consuela_client:t().
-
+-spec mk_consul_client(consul_opts()) -> consuela_client:t().
 mk_consul_client(Opts) ->
     Url = maps:get(url, Opts),
     consuela_client:new(Url, maps:get(opts, Opts, #{})).
 
--spec stop(pid()) ->
-    ok.
-
+-spec stop(pid()) -> ok.
 stop(Pid) ->
     proc_lib:stop(Pid).

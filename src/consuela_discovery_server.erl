@@ -10,9 +10,9 @@
 
 %%
 
--type service()   :: consuela_health:service_name().
--type tag()       :: consuela_health:tag().
--type client()    :: consuela_client:t().
+-type service() :: consuela_health:service_name().
+-type tag() :: consuela_health:tag().
+-type client() :: consuela_client:t().
 -type millisecs() :: pos_integer().
 
 -type opts() :: #{
@@ -20,7 +20,7 @@
         init => millisecs(),
         idle => millisecs()
     },
-    pulse    => {module(), _PulseOpts}
+    pulse => {module(), _PulseOpts}
 }.
 
 -export_type([service/0]).
@@ -32,6 +32,7 @@
 %% gen server
 
 -behaviour(gen_server).
+
 -export([init/1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
@@ -42,24 +43,21 @@
 %%
 
 -type beat() ::
-    {discovery, started | {failed, _Reason} | {succeeded, [node()]}} |
-    {{connect, node()}, started | {finished, boolean()}} |
-    {{timer, reference() | undefined}, {started, timeout()} | fired} |
-    {{node, node()}, up | {down, _Reason}} |
-    {unexpected, {{call, from()} | cast | info, _Msg}}.
+    {discovery, started | {failed, _Reason} | {succeeded, [node()]}}
+    | {{connect, node()}, started | {finished, boolean()}}
+    | {{timer, reference() | undefined}, {started, timeout()} | fired}
+    | {{node, node()}, up | {down, _Reason}}
+    | {unexpected, {{call, from()} | cast | info, _Msg}}.
 
 -export_type([beat/0]).
 
--callback handle_beat(beat(), _PulseOpts) ->
-    _.
+-callback handle_beat(beat(), _PulseOpts) -> _.
 
 -export([handle_beat/2]).
 
 %%
 
--spec start_link(service(), [tag()], client(), opts()) ->
-    {ok, pid()}.
-
+-spec start_link(service(), [tag()], client(), opts()) -> {ok, pid()}.
 start_link(Name, Tags, Client, Opts) ->
     St = mk_state(Name, Tags, Client, Opts),
     gen_server:start_link(?MODULE, St, []).
@@ -67,62 +65,52 @@ start_link(Name, Tags, Client, Opts) ->
 %%
 
 -type st() :: #{
-    service  := service(),
-    tags     := [tag()],
+    service := service(),
+    tags := [tag()],
     interval := #{init := millisecs(), idle := millisecs()},
-    tref     => reference(),
-    nodes    => [consuela_health:node_name()],
-    client   := client(),
-    pulse    := {module(), _PulseOpts}
+    tref => reference(),
+    nodes => [consuela_health:node_name()],
+    client := client(),
+    pulse := {module(), _PulseOpts}
 }.
 
 -type from() :: {pid(), reference()}.
 
--spec mk_state(service(), [tag()], client(), opts()) ->
-    st().
-
+-spec mk_state(service(), [tag()], client(), opts()) -> st().
 mk_state(Name, Tags, Client, Opts) ->
     #{
-        service  => Name,
-        tags     => Tags,
+        service => Name,
+        tags => Tags,
         interval => maps:merge(maps:get(interval, Opts, #{}), #{
-            init =>   5000,
+            init => 5000,
             idle => 600000
         }),
-        client   => Client,
-        pulse    => maps:get(pulse, Opts, {?MODULE, []})
+        client => Client,
+        pulse => maps:get(pulse, Opts, {?MODULE, []})
     }.
 
--spec init(st()) ->
-    {ok, st(), 0}.
-
+-spec init(st()) -> {ok, st(), 0}.
 init(St) ->
     ok = net_kernel:monitor_nodes(true, [nodedown_reason]),
     {ok, St, 0}.
 
--spec handle_call(_Call, from(), st()) ->
-    {noreply, st(), hibernate}.
-
+-spec handle_call(_Call, from(), st()) -> {noreply, st(), hibernate}.
 handle_call(Call, From, St) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
     {noreply, St, hibernate}.
 
--spec handle_cast(_Cast, st()) ->
-    {noreply, st(), hibernate}.
-
+-spec handle_cast(_Cast, st()) -> {noreply, st(), hibernate}.
 handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
     {noreply, St, hibernate}.
 
 -type info() ::
-    timeout |
-    {timeout, reference(), discover} |
-    {nodeup, node(), []} |
-    {nodedown, node(), [{nodedown_reason, _Reason}]}.
+    timeout
+    | {timeout, reference(), discover}
+    | {nodeup, node(), []}
+    | {nodedown, node(), [{nodedown_reason, _Reason}]}.
 
--spec handle_info(info(), st()) ->
-    {noreply, st(), hibernate}.
-
+-spec handle_info(info(), st()) -> {noreply, st(), hibernate}.
 handle_info(timeout, St) ->
     _ = beat({{timer, undefined}, fired}, St),
     {noreply, start_timer(try_discover(St)), hibernate};
@@ -140,15 +128,11 @@ handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
     {noreply, St, hibernate}.
 
--spec terminate(_Reason, st()) ->
-    ok.
-
+-spec terminate(_Reason, st()) -> ok.
 terminate(_Reason, _St) ->
     ok.
 
--spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) ->
-    {ok, st()}.
-
+-spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) -> {ok, st()}.
 code_change(_Vsn, St, _Extra) ->
     {ok, St}.
 
@@ -202,7 +186,7 @@ collect_nodes(Hs) ->
     [consuela_presence_session:get_nodename(H) || H <- Hs].
 
 try_connect_nodes(St = #{nodes := Nodes}) ->
-    _ = genlib_pmap:map(fun (N) -> try_connect_node(N, St) end, Nodes),
+    _ = genlib_pmap:map(fun(N) -> try_connect_node(N, St) end, Nodes),
     St.
 
 try_connect_node(Node, St) ->
@@ -226,16 +210,12 @@ handle_node_down(_Node, St = #{}) ->
 
 %%
 
--spec beat(beat(), st()) ->
-    _.
-
+-spec beat(beat(), st()) -> _.
 beat(Beat, #{pulse := {Module, PulseOpts}}) ->
     % TODO handle errors?
     Module:handle_beat(Beat, PulseOpts).
 
--spec handle_beat(beat(), [trace]) ->
-    ok.
-
+-spec handle_beat(beat(), [trace]) -> ok.
 handle_beat(Beat, [trace]) ->
     logger:debug("[~p] ~p", [?MODULE, Beat]);
 handle_beat(_Beat, []) ->

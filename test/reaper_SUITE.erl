@@ -7,8 +7,8 @@
 -include_lib("stdlib/include/assert.hrl").
 
 -type group_name() :: atom().
--type test_name()  :: atom().
--type config()     :: [{atom(), _}].
+-type test_name() :: atom().
+-type config() :: [{atom(), _}].
 
 -export([all/0]).
 -export([groups/0]).
@@ -27,17 +27,13 @@
 
 %% Description
 
--spec all() ->
-    [test_name() | {group, group_name()}].
-
+-spec all() -> [test_name() | {group, group_name()}].
 all() ->
     [
         {group, regular_workflow}
     ].
 
--spec groups() ->
-    [{group_name(), list(_), [test_name()]}].
-
+-spec groups() -> [{group_name(), list(_), [test_name()]}].
 groups() ->
     [
         {regular_workflow, [parallel], [
@@ -49,22 +45,18 @@ groups() ->
 
 %% Startup / shutdown
 
--spec init_per_suite(config()) ->
-    config().
+-spec init_per_suite(config()) -> config().
 
--spec end_per_suite(config()) ->
-    _.
+-spec end_per_suite(config()) -> _.
 
--spec init_per_testcase(test_name(), config()) ->
-    config().
+-spec init_per_testcase(test_name(), config()) -> config().
 
--spec end_per_testcase(test_name(), config()) ->
-    _.
+-spec end_per_testcase(test_name(), config()) -> _.
 
 init_per_suite(C) ->
     Apps =
         genlib_app:start_application(ranch) ++
-        genlib_app:start_application(consuela),
+            genlib_app:start_application(consuela),
     ok = ct_consul:await_ready(),
     [{suite_apps, Apps} | C].
 
@@ -75,27 +67,27 @@ init_per_testcase(Name, C) ->
     {ok, Proxy = #{endpoint := {Host, Port}}} = ct_proxy:start_link({"consul0", 8500}),
     Self = self(),
     Opts = #{
-        nodename  => "consul0",
+        nodename => "consul0",
         namespace => genlib:to_binary(Name),
-        consul    => #{
-            url   => ["http://", Host, ":", integer_to_list(Port)],
-            opts  => #{
+        consul => #{
+            url => ["http://", Host, ":", integer_to_list(Port)],
+            opts => #{
                 transport_opts => #{
-                    pool            => false,
+                    pool => false,
                     connect_timeout => 100,
-                    recv_timeout    => 1000
+                    recv_timeout => 1000
                 },
-                pulse          => {?MODULE, {client, #{log => debug}}}
+                pulse => {?MODULE, {client, #{log => debug}}}
             }
         },
-        keeper    => #{
+        keeper => #{
             pulse => {?MODULE, {keeper, #{log => info}}}
         },
-        reaper    => #{
+        reaper => #{
             retry => genlib_retry:exponential(3, 2, 100),
             pulse => {?MODULE, {reaper, #{log => info, relay => Self}}}
         },
-        registry  => #{
+        registry => #{
             pulse => {?MODULE, {registry, #{log => info}}}
         }
     },
@@ -157,7 +149,7 @@ reaper_queue_drains_eventually(C) ->
     Ref = ?config(registry, C),
     Slackers = [{I, spawn_slacker()} || I <- lists:seq(1, N)],
     _ = genlib_pmap:map(
-        fun ({I, Pid}) -> ?assertEqual(ok, register(Ref, I, Pid)) end,
+        fun({I, Pid}) -> ?assertEqual(ok, register(Ref, I, Pid)) end,
         Slackers
     ),
     ok = change_proxy_mode(pass, stop, C),
@@ -171,10 +163,11 @@ reaper_queue_drains_eventually(C) ->
             _ = ?assertReceive({reaper, {{zombie, {_, I, Pid}}, enqueued}}, N * 100),
             _ = ?assertReceive({reaper, {{zombie, {_, I, Pid}}, {reaping, succeeded}}}, N * 100),
             ok
-        end || {I, Pid} <- Slackers
+        end
+     || {I, Pid} <- Slackers
     ],
     _ = genlib_pmap:map(
-        fun ({I, _}) -> ?assertEqual({error, notfound}, lookup(Ref, I)) end,
+        fun({I, _}) -> ?assertEqual({error, notfound}, lookup(Ref, I)) end,
         Slackers
     ),
     ok.
@@ -186,7 +179,11 @@ lookup(Ref, Name) ->
     consuela_registry_server:lookup(Ref, Name).
 
 spawn_slacker() ->
-    erlang:spawn_link(fun () -> receive after infinity -> ok end end).
+    erlang:spawn_link(fun() ->
+        receive
+        after infinity -> ok
+        end
+    end).
 
 stop_slacker(Pid) ->
     ct_helper:stop_linked(Pid, shutdown).
@@ -206,14 +203,12 @@ change_proxy_mode(ModeWas, Mode, C) ->
     (consuela_client:beat(), {client, opts()}) -> ok;
     (consuela_session_keeper:beat(), {keeper, opts()}) -> ok;
     (consuela_zombie_reaper:beat(), {reaper, opts()}) -> ok;
-    (consuela_registry:beat(), {registry, opts()}) -> ok
-.
-
+    (consuela_registry:beat(), {registry, opts()}) -> ok.
 handle_beat(Beat, {Producer, Opts}) ->
     genlib_map:foreach(
         fun
             (log, Category) -> ct:pal(Category, "[~p] ~p", [Producer, Beat]);
-            (relay, Pid)    -> Pid ! {Producer, Beat}
+            (relay, Pid) -> Pid ! {Producer, Beat}
         end,
         Opts
     ).

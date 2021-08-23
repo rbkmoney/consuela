@@ -5,21 +5,23 @@
 
 %%
 
--type namespace()   :: consuela_lock:namespace().
--type session()     :: consuela_session:t().
--type client()      :: consuela_client:t().
+-type namespace() :: consuela_lock:namespace().
+-type session() :: consuela_session:t().
+-type client() :: consuela_client:t().
 
 %% We need a notion of _registration ID_ to overrule conflicting deregistration. It looks simpler than relying
 %% on _modify index_ of a lock.
--type rid()  :: term(). % should be unique node-wide
+
+% should be unique node-wide
+-type rid() :: term().
 -type name() :: term().
 
 -type reg() :: {rid(), name(), pid()}.
 
 -opaque t() :: #{
     namespace := namespace(),
-    session   := session(),
-    client    := client()
+    session := session(),
+    client := client()
 }.
 
 -export([new/3]).
@@ -36,14 +38,12 @@
 
 %%
 
--spec new(namespace(), session(), client()) ->
-    t().
-
+-spec new(namespace(), session(), client()) -> t().
 new(Namespace, Session, Client) ->
     #{
         namespace => Namespace,
-        session   => Session,
-        client    => Client
+        session => Session,
+        client => Client
     }.
 
 -type failure() ::
@@ -52,14 +52,11 @@ new(Namespace, Session, Client) ->
 -type result(T) ::
     {done, T} | {failed, failure()}.
 
--spec register(reg(), t()) ->
-    result(ok | {error, exists}).
+-spec register(reg(), t()) -> result(ok | {error, exists}).
 
--spec unregister(reg(), t()) ->
-    result(ok | {error, stale}).
+-spec unregister(reg(), t()) -> result(ok | {error, stale}).
 
--spec lookup(name(), t()) ->
-    result({ok, pid()} | {error, notfound}).
+-spec lookup(name(), t()) -> result({ok, pid()} | {error, notfound}).
 
 register({Rid, Name, Pid}, Registry = #{session := #{id := Sid}, client := Client}) ->
     ID = mk_lock_id(Name, Registry),

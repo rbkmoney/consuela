@@ -6,8 +6,6 @@
 
 %%
 
--spec enumerate([A]) ->
-    [{pos_integer(), A}].
-
+-spec enumerate([A]) -> [{pos_integer(), A}].
 enumerate(L) ->
     lists:zip(lists:seq(1, erlang:length(L)), L).
