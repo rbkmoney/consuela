@@ -3,7 +3,7 @@
  {<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.11.0">>},0},
  {<<"genlib">>,
   {git,"https://github.com/rbkmoney/genlib",
-       {ref,"eb346c226b80337876d1a93b7838614cdcce5e5a"}},
+       {ref,"3e1776536802739d8819351b15d54ec70568aba7"}},
   0},
  {<<"hackney">>,{pkg,<<"hackney">>,<<"1.17.4">>},0},
  {<<"idna">>,{pkg,<<"idna">>,<<"6.1.1">>},1},
