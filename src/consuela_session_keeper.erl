@@ -35,10 +35,12 @@
             | {failed, _Reason}}
         | destroyed
         | expired}
-    | {{timer, reference()},
+    | {
+        {timer, reference()},
         {started, timeout()}
         | fired
-        | reset}
+        | reset
+    }
     | {unexpected, {{call, from()} | cast | info, _Msg}}.
 
 -callback handle_beat(beat(), _PulseOpts) -> _.

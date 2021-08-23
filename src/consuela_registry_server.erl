@@ -56,13 +56,17 @@
 %% pulse
 
 -type beat() ::
-    {{deadline_call, deadline(), call()},
+    {
+        {deadline_call, deadline(), call()},
         accepted
-        | rejected}
-    | {{register | unregister, {name(), pid()} | reg()},
+        | rejected
+    }
+    | {
+        {register | unregister, {name(), pid()} | reg()},
         started
         | {finished, ok | {error, _Reason}}
-        | {failed, _FailureReason}}
+        | {failed, _FailureReason}
+    }
     | {unexpected, {{call, from()} | cast | info, _Msg}}.
 
 -callback handle_beat(beat(), _PulseOpts) -> _.

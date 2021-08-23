@@ -31,13 +31,17 @@
 %% pulse
 
 -type beat() ::
-    {{zombie, zombie()},
+    {
+        {zombie, zombie()},
         enqueued
-        | {reaping, succeeded | {skipped, _Reason} | {failed, _Reason}}}
-    | {{timer, reference()},
+        | {reaping, succeeded | {skipped, _Reason} | {failed, _Reason}}
+    }
+    | {
+        {timer, reference()},
         {started, timeout()}
         | fired
-        | reset}
+        | reset
+    }
     | {unexpected, {{call, from()} | cast | info, _Msg}}.
 
 -callback handle_beat(beat(), _PulseOpts) -> _.
