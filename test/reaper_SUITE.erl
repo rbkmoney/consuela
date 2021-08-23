@@ -164,7 +164,7 @@ reaper_queue_drains_eventually(C) ->
             _ = ?assertReceive({reaper, {{zombie, {_, I, Pid}}, {reaping, succeeded}}}, N * 100),
             ok
         end
-        || {I, Pid} <- Slackers
+     || {I, Pid} <- Slackers
     ],
     _ = genlib_pmap:map(
         fun({I, _}) -> ?assertEqual({error, notfound}, lookup(Ref, I)) end,
