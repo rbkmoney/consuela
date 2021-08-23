@@ -1,4 +1,5 @@
 -module(discovery_node_runner).
+
 -include_lib("kernel/include/inet.hrl").
 
 -export([run/3]).
@@ -7,15 +8,13 @@
 
 %%
 
--spec run(binary(), consuela_client:url(), pos_integer()) ->
-    ok.
-
+-spec run(binary(), consuela_client:url(), pos_integer()) -> ok.
 run(Nodename, ConsulUrl, Lifetime) ->
-    ok     = logger:set_primary_config(level, info),
-    _Apps  = genlib_app:start_application(consuela),
-    ok     = ct_consul:await_ready(),
+    ok = logger:set_primary_config(level, info),
+    _Apps = genlib_app:start_application(consuela),
+    ok = ct_consul:await_ready(),
     Consul = #{
-        url  => ConsulUrl,
+        url => ConsulUrl,
         opts => opts(consul)
     },
     PresenceOpts = #{
@@ -40,9 +39,7 @@ await(Lifetime) ->
         {signal, sigterm} ->
             _ = logger:info("sigterm received, terminating ...", []),
             ok
-    after
-        Lifetime * 1000 ->
-            ok
+    after Lifetime * 1000 -> ok
     end.
 
 opts(Producer) ->
@@ -50,8 +47,6 @@ opts(Producer) ->
 
 %%
 
--spec handle_beat(consuela_client:beat() | consuela_discovery_server:beat(), atom()) ->
-    ok.
-
+-spec handle_beat(consuela_client:beat() | consuela_discovery_server:beat(), atom()) -> ok.
 handle_beat(Beat, Producer) ->
     logger:info("[~p] ~p", [Producer, Beat]).

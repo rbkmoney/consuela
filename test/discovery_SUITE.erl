@@ -12,8 +12,8 @@
 -include_lib("stdlib/include/assert.hrl").
 
 -type group_name() :: atom().
--type test_name()  :: atom().
--type config()     :: [{atom(), _}].
+-type test_name() :: atom().
+-type config() :: [{atom(), _}].
 
 -export([all/0]).
 -export([init_per_suite/1]).
@@ -27,9 +27,7 @@
 
 %% Description
 
--spec all() ->
-    [test_name() | {group, group_name()}].
-
+-spec all() -> [test_name() | {group, group_name()}].
 all() ->
     [
         nodes_discover_themselves
@@ -39,11 +37,9 @@ all() ->
 
 -include_lib("kernel/include/inet.hrl").
 
--spec init_per_suite(config()) ->
-    config().
+-spec init_per_suite(config()) -> config().
 
--spec end_per_suite(config()) ->
-    _.
+-spec end_per_suite(config()) -> _.
 
 init_per_suite(C) ->
     {ok, #hostent{h_addr_list = [Address | _]}} = inet:gethostbyname(inet_db:gethostname()),
@@ -64,7 +60,6 @@ end_per_suite(C) ->
 -include("ct_helper.hrl").
 
 -spec nodes_discover_themselves(config()) -> _.
-
 nodes_discover_themselves(C) ->
     N = ?config(n, C),
     Service = ?config(service, C),
@@ -77,10 +72,11 @@ nodes_discover_themselves(C) ->
 
 await_healthy_service(N, Service, Client) ->
     ct_helper:await_n(
-        N, fun () ->
+        N,
+        fun() ->
             case consuela_health:get(Service, [], true, Client) of
                 {ok, Hs} -> Hs;
-                Other    -> Other
+                Other -> Other
             end
         end,
         genlib_retry:linear(3, 5000)
@@ -89,7 +85,7 @@ await_healthy_service(N, Service, Client) ->
 await_known_nodes(N, Node) ->
     ct_helper:await_n(
         N,
-        fun () -> rpc:call(Node, erlang, nodes, [[this, visible]]) end,
+        fun() -> rpc:call(Node, erlang, nodes, [[this, visible]]) end,
         genlib_retry:linear(3, 5000)
     ).
 
@@ -100,14 +96,9 @@ await_known_nodes(N, Node) ->
 mk_pulse(Producer, Category) ->
     {?MODULE, {Producer, #{log => Category}}}.
 
--spec handle_beat
-    (consuela_client:beat(), {client, opts()}) -> ok
-.
-
+-spec handle_beat(consuela_client:beat(), {client, opts()}) -> ok.
 handle_beat(Beat, {Producer, Opts}) ->
     genlib_map:foreach(
-        fun
-            (log, Category) -> ct:pal(Category, "[~p] ~9999p", [Producer, Beat])
-        end,
+        fun(log, Category) -> ct:pal(Category, "[~p] ~9999p", [Producer, Beat]) end,
         Opts
     ).

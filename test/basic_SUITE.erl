@@ -7,8 +7,8 @@
 -include_lib("stdlib/include/assert.hrl").
 
 -type group_name() :: atom().
--type test_name()  :: atom().
--type config()     :: [{atom(), _}].
+-type test_name() :: atom().
+-type config() :: [{atom(), _}].
 
 -export([all/0]).
 -export([groups/0]).
@@ -40,9 +40,7 @@
 
 %% Description
 
--spec all() ->
-    [test_name() | {group, group_name()}].
-
+-spec all() -> [test_name() | {group, group_name()}].
 all() ->
     [
         {group, regular_workflow},
@@ -51,12 +49,9 @@ all() ->
         {group, presence_workflow}
     ].
 
--spec groups() ->
-    [{group_name(), list(_), [test_name()]}].
-
+-spec groups() -> [{group_name(), list(_), [test_name()]}].
 groups() ->
     [
-
         {regular_workflow, [parallel], [
             empty_lookup_notfound,
             empty_unregistration_notfound,
@@ -84,36 +79,29 @@ groups() ->
         {presence_workflow, [], [
             {group, regular_workflow}
         ]}
-
     ].
 
 %% Startup / shutdown
 
--spec init_per_suite(config()) ->
-    config().
+-spec init_per_suite(config()) -> config().
 
--spec end_per_suite(config()) ->
-    _.
+-spec end_per_suite(config()) -> _.
 
--spec init_per_group(group_name(), config()) ->
-    config().
+-spec init_per_group(group_name(), config()) -> config().
 
--spec end_per_group(group_name(), config()) ->
-    _.
+-spec end_per_group(group_name(), config()) -> _.
 
--spec init_per_testcase(test_name(), config()) ->
-    config().
+-spec init_per_testcase(test_name(), config()) -> config().
 
--spec end_per_testcase(test_name(), config()) ->
-    _.
+-spec end_per_testcase(test_name(), config()) -> _.
 
 init_per_suite(C) ->
     Apps =
         genlib_app:start_application(ranch) ++
-        genlib_app:start_application(consuela),
+            genlib_app:start_application(consuela),
     ok = ct_consul:await_ready(),
     Consul = #{
-        url  => "http://consul0:8500",
+        url => "http://consul0:8500",
         opts => #{
             pulse => {?MODULE, {client, debug}}
         }
@@ -126,12 +114,12 @@ end_per_suite(C) ->
 init_per_group(proper_exceptions, C) ->
     {ok, Proxy = #{endpoint := {Host, Port}}} = ct_proxy:start_link({"consul0", 8500}),
     Consul = #{
-        url   => ["http://", Host, ":", integer_to_list(Port)],
+        url => ["http://", Host, ":", integer_to_list(Port)],
         opts => #{
             transport_opts => #{
-                pool            => false,
+                pool => false,
                 connect_timeout => 100,
-                recv_timeout    => 1000
+                recv_timeout => 1000
             },
             pulse => {?MODULE, {client, debug}}
         }
@@ -140,9 +128,9 @@ init_per_group(proper_exceptions, C) ->
 init_per_group(presence_workflow, C) ->
     Name = <<?MODULE_STRING>>,
     Opts = #{
-        name         => Name,
-        consul       => ?config(consul, C),
-        server_opts  => #{pulse => {?MODULE, {presence_server, info}}},
+        name => Name,
+        consul => ?config(consul, C),
+        server_opts => #{pulse => {?MODULE, {presence_server, info}}},
         session_opts => #{pulse => {?MODULE, {presence_session, info}}}
     },
     {ok, Pid} = consuela_presence_sup:start_link(Opts),
@@ -161,13 +149,13 @@ end_per_group(_, _C) ->
 
 init_per_testcase(Name, C) ->
     Opts = #{
-        nodename  => "consul0",
+        nodename => "consul0",
         namespace => genlib:to_binary(Name),
-        consul    => ?config(consul, C),
-        session   => proplists:get_value(session, C, #{}),
-        keeper    => #{pulse => {?MODULE, {keeper, info}}},
-        reaper    => #{pulse => {?MODULE, {reaper, info}}},
-        registry  => #{pulse => {?MODULE, {registry, info}}}
+        consul => ?config(consul, C),
+        session => proplists:get_value(session, C, #{}),
+        keeper => #{pulse => {?MODULE, {keeper, info}}},
+        reaper => #{pulse => {?MODULE, {reaper, info}}},
+        registry => #{pulse => {?MODULE, {registry, info}}}
     },
     {ok, Pid} = consuela_registry_sup:start_link(Name, Opts),
     [{registry, Name}, {registry_sup, Pid}, {testcase, Name} | C].
@@ -178,20 +166,20 @@ end_per_testcase(_Name, C) ->
 
 %% Definitions
 
--spec empty_lookup_notfound(config())                -> _.
--spec empty_unregistration_notfound(config())        -> _.
--spec registration_persists(config())                -> _.
--spec multiple_names_ok(config())                    -> _.
--spec complex_process_name_ok(config())              -> _.
--spec conflicting_registration_fails(config())       -> _.
+-spec empty_lookup_notfound(config()) -> _.
+-spec empty_unregistration_notfound(config()) -> _.
+-spec registration_persists(config()) -> _.
+-spec multiple_names_ok(config()) -> _.
+-spec complex_process_name_ok(config()) -> _.
+-spec conflicting_registration_fails(config()) -> _.
 -spec registration_unregistration_succeeds(config()) -> _.
--spec conflicting_unregistration_fails(config())     -> _.
--spec dead_registration_cleaned(config())            -> _.
--spec registrations_select_ok(config())              -> _.
+-spec conflicting_unregistration_fails(config()) -> _.
+-spec dead_registration_cleaned(config()) -> _.
+-spec registrations_select_ok(config()) -> _.
 
--spec unavail_lookup_exits(config())                 -> _.
--spec unavail_registration_exits(config())           -> _.
--spec no_registry_exits(config())                    -> _.
+-spec unavail_lookup_exits(config()) -> _.
+-spec unavail_registration_exits(config()) -> _.
+-spec no_registry_exits(config()) -> _.
 
 empty_lookup_notfound(C) ->
     Ref = ?config(registry, C),
@@ -251,7 +239,7 @@ dead_registration_cleaned(C) ->
     Pid = spawn_slacker(),
     _ = ?assertEqual(ok, register(Ref, my_boy, Pid)),
     ok = stop_slacker(Pid),
-    _ = ct_helper:await({error, notfound}, fun () -> lookup(Ref, my_boy) end),
+    _ = ct_helper:await({error, notfound}, fun() -> lookup(Ref, my_boy) end),
     _ = ?assertEqual({error, notfound}, unregister(Ref, my_boy, Pid)),
     ok.
 
@@ -292,7 +280,11 @@ no_registry_exits(_C) ->
     _ = ?assertExit({consuela, registry_terminated}, lookup(Ref, my_boy)).
 
 spawn_slacker() ->
-    erlang:spawn_link(fun () -> receive after infinity -> ok end end).
+    erlang:spawn_link(fun() ->
+        receive
+        after infinity -> ok
+        end
+    end).
 
 stop_slacker(Pid) ->
     ct_helper:stop_linked(Pid, shutdown).
@@ -320,9 +312,7 @@ change_proxy_mode(Mode, C) ->
     (consuela_client:beat(), {client, category()}) -> ok;
     (consuela_session_keeper:beat(), {keeper, category()}) -> ok;
     (consuela_zombie_reaper:beat(), {reaper, category()}) -> ok;
-    (consuela_registry:beat(), {registry, category()}) -> ok
-.
-
+    (consuela_registry:beat(), {registry, category()}) -> ok.
 handle_beat(Beat, {Producer, Category}) ->
     ct:pal(Category, "[~p] ~p", [Producer, Beat]);
 handle_beat(_Beat, _) ->

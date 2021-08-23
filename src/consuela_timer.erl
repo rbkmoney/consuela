@@ -12,15 +12,11 @@
 
 -type timer_ref() :: reference().
 
--spec start(_Timeout :: non_neg_integer(), _Msg) ->
-    timer_ref().
-
+-spec start(_Timeout :: non_neg_integer(), _Msg) -> timer_ref().
 start(Timeout, Msg) ->
     erlang:start_timer(Timeout, self(), Msg).
 
--spec reset(timer_ref()) ->
-    ok.
-
+-spec reset(timer_ref()) -> ok.
 reset(TimerRef) ->
     case erlang:cancel_timer(TimerRef) of
         false ->
@@ -30,8 +26,8 @@ reset(TimerRef) ->
     end.
 
 flush(TimerRef) ->
-    receive {timeout, TimerRef, _} ->
-        ok
-    after 0 ->
-        ok
+    receive
+        {timeout, TimerRef, _} ->
+            ok
+    after 0 -> ok
     end.

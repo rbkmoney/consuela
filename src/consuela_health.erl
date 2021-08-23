@@ -5,49 +5,49 @@
 
 %%
 
--type node_name()    :: inet:hostname().
--type service_id()   :: id().
+-type node_name() :: inet:hostname().
+-type service_id() :: id().
 -type service_name() :: binary().
--type check_id()     :: id().
--type check_name()   :: binary().
--type tag()          :: binary().
--type status()       :: passing | warning | critical.
--type endpoint()     :: {inet:ip_address(), inet:port_number()}.
--type metadata()     :: #{binary() => binary()}.
--type indexes()      :: #{create | modify => integer()}.
+-type check_id() :: id().
+-type check_name() :: binary().
+-type tag() :: binary().
+-type status() :: passing | warning | critical.
+-type endpoint() :: {inet:ip_address(), inet:port_number()}.
+-type metadata() :: #{binary() => binary()}.
+-type indexes() :: #{create | modify => integer()}.
 
--type id()           :: binary().
--type uuid()         :: binary().
--type seconds()      :: non_neg_integer().
+-type id() :: binary().
+-type uuid() :: binary().
+-type seconds() :: non_neg_integer().
 
 -type node_() :: #{
-    id       := uuid(),
-    name     := node_name(),
-    address  := inet:ip_address(),
+    id := uuid(),
+    name := node_name(),
+    address := inet:ip_address(),
     metadata => metadata(),
-    indexes  => indexes()
+    indexes => indexes()
 }.
 
 -type service() :: #{
-    id       := service_id(),
-    name     := service_name(),
-    tags     := [tag()],
+    id := service_id(),
+    name := service_name(),
+    tags := [tag()],
     endpoint := endpoint(),
     metadata => metadata(),
-    indexes  => indexes()
+    indexes => indexes()
 }.
 
 -type check() :: #{
-    id       := check_id(),
-    name     := check_name(),
-    status   := status(),
-    indexes  => indexes()
+    id := check_id(),
+    name := check_name(),
+    status := status(),
+    indexes => indexes()
 }.
 
 -type t() :: #{
-    node     := node_(),
-    service  := service(),
-    checks   := [check()]
+    node := node_(),
+    service := service(),
+    checks := [check()]
 }.
 
 -export_type([service_id/0]).
@@ -69,9 +69,7 @@
 
 %%
 
--spec get(service_name(), [tag()], boolean(), consuela_client:t()) ->
-    {ok, [t()]}.
-
+-spec get(service_name(), [tag()], boolean(), consuela_client:t()) -> {ok, [t()]}.
 get(ServiceName, Tags, Passing, Client) ->
     Resource = {
         [<<"/v1/health/service/">>, encode_servicename(ServiceName)],
@@ -85,24 +83,23 @@ get(ServiceName, Tags, Passing, Client) ->
     end.
 
 -type service_params() :: #{
-    name     := service_name(),
-    id       => service_id(),
-    tags     := [tag()],
+    name := service_name(),
+    id => service_id(),
+    tags := [tag()],
     metadata => metadata(),
     endpoint => endpoint(),
-    checks   => [check_params()]
+    checks => [check_params()]
 }.
 
 -type check_params() :: #{
-    name     := check_name(),
-    id       => check_id(),
-    type     := {ttl, seconds()} | {tcp, endpoint(), seconds()}, % TODO | {http, ...}
-    initial  => status()
+    name := check_name(),
+    id => check_id(),
+    % TODO | {http, ...}
+    type := {ttl, seconds()} | {tcp, endpoint(), seconds()},
+    initial => status()
 }.
 
--spec register(service_params(), consuela_client:t()) ->
-    ok.
-
+-spec register(service_params(), consuela_client:t()) -> ok.
 register(ServiceParams, Client) ->
     Resource = <<"/v1/agent/service/register">>,
     Content = encode_service_params(ServiceParams),
@@ -113,9 +110,7 @@ register(ServiceParams, Client) ->
             erlang:error(Reason)
     end.
 
--spec deregister(service_name() | service_id(), consuela_client:t()) ->
-    ok | {error, notfound}.
-
+-spec deregister(service_name() | service_id(), consuela_client:t()) -> ok | {error, notfound}.
 deregister(ServiceNameOrID, Client) ->
     Resource = [<<"/v1/agent/service/deregister/">>, encode_servicename(ServiceNameOrID)],
     case consuela_client:request(put, Resource, Client) of
@@ -140,16 +135,18 @@ attach_passing(false, Q) ->
 
 %%
 
-encode_service_params(#{
-    name     := Name,
-    tags     := Tags
-} = V) ->
+encode_service_params(
+    #{
+        name := Name,
+        tags := Tags
+    } = V
+) ->
     lists:foldl(
         fun maps:merge/2,
         #{
-            <<"Name">>    => encode_servicename(Name),
-            <<"ID">>      => encode_binary(maps:get(id, V, genlib:to_binary(Name))),
-            <<"Tags">>    => encode_tags(Tags)
+            <<"Name">> => encode_servicename(Name),
+            <<"ID">> => encode_binary(maps:get(id, V, genlib:to_binary(Name))),
+            <<"Tags">> => encode_tags(Tags)
         },
         [
             encode_endpoint(maps:get(endpoint, V, undefined)),
@@ -169,7 +166,7 @@ encode_endpoint(undefined) ->
 encode_endpoint({IP, Port}) ->
     #{
         <<"Address">> => encode_address(IP),
-        <<"Port">>    => encode_port(Port)
+        <<"Port">> => encode_port(Port)
     }.
 
 encode_address(V) ->
@@ -195,8 +192,8 @@ encode_check_params(#{name := Name, type := Type} = V) ->
     maps:merge(
         #{
             <<"CheckID">> => encode_binary(maps:get(id, V, Name)),
-            <<"Name">>    => encode_servicename(Name),
-            <<"Status">>  => encode_status(maps:get(initial, V, critical))
+            <<"Name">> => encode_servicename(Name),
+            <<"Status">> => encode_status(maps:get(initial, V, critical))
         },
         encode_check_type(Type)
     ).
@@ -206,13 +203,14 @@ encode_check_type({ttl, V}) ->
         <<"TTL">> => encode_duration('s', V)
     };
 encode_check_type({tcp, {IP, Port}, Interval}) ->
-    IP1 = case inet:ntoa(IP) of
-        R when is_list(R), tuple_size(IP) == 8 -> [$[, R, $]];
-        R when is_list(R), tuple_size(IP) == 4 -> R;
-        {error, einval} -> erlang:error(badarg)
-    end,
+    IP1 =
+        case inet:ntoa(IP) of
+            R when is_list(R), tuple_size(IP) == 8 -> [$[, R, $]];
+            R when is_list(R), tuple_size(IP) == 4 -> R;
+            {error, einval} -> erlang:error(badarg)
+        end,
     #{
-        <<"TCP">>      => iolist_to_binary([IP1, ":", integer_to_binary(encode_port(Port))]),
+        <<"TCP">> => iolist_to_binary([IP1, ":", integer_to_binary(encode_port(Port))]),
         <<"Interval">> => encode_duration('s', Interval)
     }.
 
@@ -241,21 +239,21 @@ encode_binary(V) when is_binary(V) ->
 %%
 
 decode_health(#{
-    <<"Node">>    := Node,
+    <<"Node">> := Node,
     <<"Service">> := Service,
-    <<"Checks">>  := Checks
+    <<"Checks">> := Checks
 }) ->
     #{
-        node    => decode_node(Node),
+        node => decode_node(Node),
         service => decode_service(Service),
-        checks  => decode_checks(Checks)
+        checks => decode_checks(Checks)
     }.
 
 decode_node(#{
-    <<"ID">>          := ID,
-    <<"Node">>        := Node,
-    <<"Address">>     := Address,
-    <<"Meta">>        := Meta,
+    <<"ID">> := ID,
+    <<"Node">> := Node,
+    <<"Address">> := Address,
+    <<"Meta">> := Meta,
     <<"CreateIndex">> := CreateIndex,
     <<"ModifyIndex">> := ModifyIndex
     % TODO
@@ -263,22 +261,22 @@ decode_node(#{
     % <<"TaggedAddresses">> := TaggedAddresses
 }) ->
     decode_meta(Meta, #{
-        id       => decode_id(ID),
-        name     => decode_nodename(Node),
-        address  => decode_address(Address),
-        indexes  => #{
+        id => decode_id(ID),
+        name => decode_nodename(Node),
+        address => decode_address(Address),
+        indexes => #{
             create => decode_index(CreateIndex),
             modify => decode_index(ModifyIndex)
         }
     }).
 
 decode_service(#{
-    <<"ID">>          := ID,
-    <<"Service">>     := Service,
-    <<"Tags">>        := Tags,
-    <<"Address">>     := Address,
-    <<"Port">>        := Port,
-    <<"Meta">>        := Meta,
+    <<"ID">> := ID,
+    <<"Service">> := Service,
+    <<"Tags">> := Tags,
+    <<"Address">> := Address,
+    <<"Port">> := Port,
+    <<"Meta">> := Meta,
     <<"CreateIndex">> := CreateIndex,
     <<"ModifyIndex">> := ModifyIndex
     % TODO
@@ -287,11 +285,11 @@ decode_service(#{
     % <<"Connect">> := Connect
 }) ->
     decode_meta(Meta, #{
-        id       => decode_id(ID),
-        name     => decode_servicename(Service),
-        tags     => decode_tags(Tags),
+        id => decode_id(ID),
+        name => decode_servicename(Service),
+        tags => decode_tags(Tags),
         endpoint => {decode_address(Address), decode_port(Port)},
-        indexes  => #{
+        indexes => #{
             create => decode_index(CreateIndex),
             modify => decode_index(ModifyIndex)
         }
@@ -310,9 +308,9 @@ decode_checks(V) ->
     lists:map(fun decode_check/1, V).
 
 decode_check(#{
-    <<"CheckID">>     := ID,
-    <<"Name">>        := Name,
-    <<"Status">>      := Status,
+    <<"CheckID">> := ID,
+    <<"Name">> := Name,
+    <<"Status">> := Status,
     <<"CreateIndex">> := CreateIndex,
     <<"ModifyIndex">> := ModifyIndex
     % TODO
@@ -324,10 +322,10 @@ decode_check(#{
     % <<"Definition">> := Definition
 }) ->
     #{
-        id       => decode_id(ID),
-        name     => decode_checkname(Name),
-        status   => decode_status(Status),
-        indexes  => #{
+        id => decode_id(ID),
+        name => decode_checkname(Name),
+        status => decode_status(Status),
+        indexes => #{
             create => decode_index(CreateIndex),
             modify => decode_index(ModifyIndex)
         }
@@ -371,7 +369,9 @@ decode_index(V) ->
     decode_integer(V).
 
 decode_string(V) when is_binary(V) ->
-    case unicode:characters_to_list(V) of S when is_list(S) -> S end.
+    case unicode:characters_to_list(V) of
+        S when is_list(S) -> S
+    end.
 
 decode_integer(V) when is_integer(V) ->
     V.

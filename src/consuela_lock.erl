@@ -5,16 +5,16 @@
 
 %%
 
--type namespace()   :: binary().
--type id()          :: {namespace(), term()}.
--type value()       :: term().
--type index()       :: integer().
--type session()     :: consuela_session:id().
+-type namespace() :: binary().
+-type id() :: {namespace(), term()}.
+-type value() :: term().
+-type index() :: integer().
+-type session() :: consuela_session:id().
 -type consistency() :: default | consistent | stale.
 
 -type lock() :: #{
-    id      := id(),
-    value   := value(),
+    id := id(),
+    value := value(),
     session => session(),
     indexes := {_Create :: index(), _Modify :: index(), _Lock :: index()}
 }.
@@ -30,9 +30,7 @@
 
 %%
 
--spec hold(id(), value(), session(), consuela_client:t()) ->
-    ok | {error, failed}.
-
+-spec hold(id(), value(), session(), consuela_client:t()) -> ok | {error, failed}.
 hold(ID, Value, Session, Client) ->
     Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"acquire">>, encode_session(Session)}]},
     case consuela_client:request(put, Resource, {raw, encode_value(Value)}, Client) of
@@ -49,17 +47,13 @@ hold(ID, Value, Session, Client) ->
             erlang:error(Reason)
     end.
 
--spec release(lock(), consuela_client:t()) ->
-    ok | {error, failed}.
-
+-spec release(lock(), consuela_client:t()) -> ok | {error, failed}.
 release(#{id := ID, session := Session}, Client) ->
     release(ID, Session, Client);
 release(#{}, _Client) ->
     erlang:error(badarg).
 
--spec release(id(), session(), consuela_client:t()) ->
-    ok | {error, failed}.
-
+-spec release(id(), session(), consuela_client:t()) -> ok | {error, failed}.
 release(ID, Session, Client) ->
     Resource = {[<<"/v1/kv/">> | encode_id(ID)], [{<<"release">>, encode_session(Session)}]},
     case consuela_client:request(put, Resource, Client) of
@@ -71,9 +65,7 @@ release(ID, Session, Client) ->
             erlang:error(Reason)
     end.
 
--spec delete(lock(), consuela_client:t()) ->
-    ok | {error, stale}.
-
+-spec delete(lock(), consuela_client:t()) -> ok | {error, stale}.
 delete(#{id := ID, indexes := {_, ModifyIndex, _}}, Client) ->
     Resource = {[<<"/v1/kv/">> | encode_id(ID)], encode_cas(ModifyIndex)},
     case consuela_client:request(delete, Resource, Client) of
@@ -85,16 +77,11 @@ delete(#{id := ID, indexes := {_, ModifyIndex, _}}, Client) ->
             erlang:error(Reason)
     end.
 
-
--spec get(id(), consuela_client:t()) ->
-    {ok, lock()} | {error, notfound}.
-
+-spec get(id(), consuela_client:t()) -> {ok, lock()} | {error, notfound}.
 get(ID, Client) ->
     get(ID, default, Client).
 
--spec get(id(), consistency(), consuela_client:t()) ->
-    {ok, lock()} | {error, notfound}.
-
+-spec get(id(), consistency(), consuela_client:t()) -> {ok, lock()} | {error, notfound}.
 get(ID, Consistency, Client) ->
     Resource = {[<<"/v1/kv/">> | encode_id(ID)], encode_consistency(Consistency)},
     case consuela_client:request(get, Resource, Client) of
@@ -144,22 +131,25 @@ encode_binary(V) when is_binary(V) ->
 
 %%
 
-decode_lock(V = #{
-    <<"Value">>       := Value,
-    <<"CreateIndex">> := CreateIndex,
-    <<"ModifyIndex">> := ModifyIndex,
-    <<"LockIndex">>   := LockIndex
-    % TODO
-    % <<"Flags">>     := Flags,
-}, ID) ->
+decode_lock(
+    V = #{
+        <<"Value">> := Value,
+        <<"CreateIndex">> := CreateIndex,
+        <<"ModifyIndex">> := ModifyIndex,
+        <<"LockIndex">> := LockIndex
+        % TODO
+        % <<"Flags">>     := Flags,
+    },
+    ID
+) ->
     maps:fold(
         fun
             (<<"Session">>, Session, L) -> L#{session => decode_session(Session)};
             (_, _, L) -> L
         end,
         #{
-            id      => ID,
-            value   => decode_nullable(fun decode_value/1, Value),
+            id => ID,
+            value => decode_nullable(fun decode_value/1, Value),
             indexes => {decode_index(CreateIndex), decode_index(ModifyIndex), decode_index(LockIndex)}
         },
         V

@@ -6,16 +6,19 @@
 %% api
 
 -type deadline() :: integer().
--type session()  :: consuela_session:t().
+-type session() :: consuela_session:t().
 -type interval() ::
-    pos_integer()       | % seconds
-    genlib_rational:t() . % fraction of TTL
+    % seconds
+    pos_integer()
+    % fraction of TTL
+    | genlib_rational:t().
 
 -export([start_link/3]).
 
 %% gen server
 
 -behaviour(gen_server).
+
 -export([init/1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
@@ -28,23 +31,17 @@
 -type beat() ::
     {session,
         {renewal,
-            {succeeded, session(), deadline()} |
-            {failed, _Reason}
-        } |
-        destroyed |
-        expired
-    } |
-    {{timer, reference()},
-        {started, timeout()} |
-        fired |
-        reset
-    } |
-    {unexpected,
-        {{call, from()} | cast | info, _Msg}
-    }.
+            {succeeded, session(), deadline()}
+            | {failed, _Reason}}
+        | destroyed
+        | expired}
+    | {{timer, reference()},
+        {started, timeout()}
+        | fired
+        | reset}
+    | {unexpected, {{call, from()} | cast | info, _Msg}}.
 
--callback handle_beat(beat(), _PulseOpts) ->
-    _.
+-callback handle_beat(beat(), _PulseOpts) -> _.
 
 -export([handle_beat/2]).
 
@@ -54,33 +51,29 @@
 
 -type opts() :: #{
     interval => interval(),
-    pulse    => {module(), _PulseOpts}
+    pulse => {module(), _PulseOpts}
 }.
 
 -export_type([opts/0]).
 
--spec start_link(session(), consuela_client:t(), opts()) ->
-    {ok, pid()}.
-
+-spec start_link(session(), consuela_client:t(), opts()) -> {ok, pid()}.
 start_link(Session, Client, Opts) ->
     gen_server:start_link(?MODULE, {Session, Client, Opts}, []).
 
 %%
 
 -type st() :: #{
-    session  := consuela_session:t(),
+    session := consuela_session:t(),
     deadline := deadline(),
-    client   := consuela_client:t(),
+    client := consuela_client:t(),
     interval := interval(),
-    timer    => reference(),
-    pulse    := {module(), _PulseOpts}
+    timer => reference(),
+    pulse := {module(), _PulseOpts}
 }.
 
 -type from() :: {pid(), reference()}.
 
--spec init({consuela_session:t(), consuela_client:t(), opts()}) ->
-    {ok, st(), 0}.
-
+-spec init({consuela_session:t(), consuela_client:t(), opts()}) -> {ok, st(), 0}.
 init({Session, Client, Opts}) ->
     _ = erlang:process_flag(trap_exit, true),
     St = maps:fold(
@@ -93,35 +86,30 @@ init({Session, Client, Opts}) ->
                 St#{interval => Timeout}
         end,
         #{
-            session  => Session,
+            session => Session,
             deadline => compute_deadline(Session),
-            client   => Client,
-            interval => {1, 2}, % half of a TTL by default
-            pulse    => {?MODULE, []}
+            client => Client,
+            % half of a TTL by default
+            interval => {1, 2},
+            pulse => {?MODULE, []}
         },
         Opts
     ),
     {ok, St, 0}.
 
--spec handle_call(_Call, from(), st()) ->
-    {noreply, st()}.
-
+-spec handle_call(_Call, from(), st()) -> {noreply, st()}.
 handle_call(Call, From, St) ->
     _ = beat({unexpected, {{call, From}, Call}}, St),
     {noreply, St}.
 
--spec handle_cast(_Cast, st()) ->
-    {noreply, st()}.
-
+-spec handle_cast(_Cast, st()) -> {noreply, st()}.
 handle_cast(Cast, St) ->
     _ = beat({unexpected, {cast, Cast}}, St),
     {noreply, St}.
 
 -type info() :: {timeout, reference(), renew} | timeout.
 
--spec handle_info(info(), st()) ->
-    {noreply, st()}.
-
+-spec handle_info(info(), st()) -> {noreply, st()}.
 handle_info({timeout, TimerRef, renew}, St = #{timer := TimerRef}) ->
     _ = beat({{timer, TimerRef}, fired}, St),
     {noreply, restart_timer(try_renew_session(St))};
@@ -131,15 +119,11 @@ handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
     {noreply, St}.
 
--spec terminate(_Reason, st()) ->
-    _.
-
+-spec terminate(_Reason, st()) -> _.
 terminate(_Reason, St) ->
     destroy_session(St).
 
--spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) ->
-    {ok, st()}.
-
+-spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) -> {ok, st()}.
 code_change(_Vsn, St, _Extra) ->
     {ok, St}.
 
@@ -218,16 +202,12 @@ get_timestamp() ->
 
 %%
 
--spec beat(beat(), st()) ->
-    _.
-
+-spec beat(beat(), st()) -> _.
 beat(Beat, #{pulse := {Module, PulseOpts}}) ->
     % TODO handle errors?
     Module:handle_beat(Beat, PulseOpts).
 
--spec handle_beat(beat(), [trace]) ->
-    ok.
-
+-spec handle_beat(beat(), [trace]) -> ok.
 handle_beat(Beat, [trace]) ->
     logger:debug("[~p] ~p", [?MODULE, Beat]);
 handle_beat(_Beat, []) ->

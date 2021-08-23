@@ -9,7 +9,7 @@ SERVICE_NAME := consuela
 BUILD_IMAGE_NAME := build-erlang
 BUILD_IMAGE_TAG := 52042cbce455154e1128f6ce2e7af0aa58a854d7
 
-CALL_ANYWHERE := all submodules compile xref lint dialyze clean distclean
+CALL_ANYWHERE := all submodules compile xref lint dialyze clean distclean format check_format
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
 all: compile
@@ -29,6 +29,12 @@ xref: submodules
 
 lint:
 	$(REBAR) lint
+
+check_format:
+	$(REBAR) fmt -c
+
+format:
+	$(REBAR) fmt -w
 
 dialyze: submodules
 	$(REBAR) dialyzer

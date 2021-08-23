@@ -20,6 +20,7 @@
 %% gen server
 
 -behaviour(gen_server).
+
 -export([init/1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
@@ -31,20 +32,15 @@
 
 -type beat() ::
     {{zombie, zombie()},
-        enqueued |
-        {reaping, succeeded | {skipped, _Reason} | {failed, _Reason}}
-    } |
-    {{timer, reference()},
-        {started, timeout()} |
-        fired |
-        reset
-    } |
-    {unexpected,
-        {{call, from()} | cast | info, _Msg}
-    }.
+        enqueued
+        | {reaping, succeeded | {skipped, _Reason} | {failed, _Reason}}}
+    | {{timer, reference()},
+        {started, timeout()}
+        | fired
+        | reset}
+    | {unexpected, {{call, from()} | cast | info, _Msg}}.
 
--callback handle_beat(beat(), _PulseOpts) ->
-    _.
+-callback handle_beat(beat(), _PulseOpts) -> _.
 
 -export([handle_beat/2]).
 
@@ -62,34 +58,28 @@
 -export_type([opts/0]).
 -export_type([ref/0]).
 
--spec start_link(registry(), opts()) ->
-    {ok, pid()}.
-
+-spec start_link(registry(), opts()) -> {ok, pid()}.
 start_link(Registry, Opts) ->
     gen_server:start_link(?MODULE, {Registry, Opts}, []).
 
--spec enqueue(ref(), [zombie()]) ->
-    ok.
-
+-spec enqueue(ref(), [zombie()]) -> ok.
 enqueue(Ref, Zombies) ->
     enqueue(Ref, Zombies, #{}).
 
 -type enqueue_opts() :: #{
-    drain => boolean(), % Try to drain queue right away? (false by default)
-    sync  => boolean()  % Wait for enqueue confirmation? (false by default0
+    % Try to drain queue right away? (false by default)
+    drain => boolean(),
+    % Wait for enqueue confirmation? (false by default0
+    sync => boolean()
 }.
 
--spec enqueue(ref(), [zombie()], enqueue_opts()) ->
-    ok.
-
+-spec enqueue(ref(), [zombie()], enqueue_opts()) -> ok.
 enqueue(Ref, Zombies, Opts = #{sync := true}) ->
     gen_server:call(Ref, {enqueue, Zombies, maps:without([sync], Opts)});
 enqueue(Ref, Zombies, Opts) ->
     gen_server:cast(Ref, {enqueue, Zombies, Opts}).
 
--spec drain(ref()) ->
-    ok.
-
+-spec drain(ref()) -> ok.
 drain(Ref) ->
     gen_server:cast(Ref, drain).
 
@@ -98,20 +88,18 @@ drain(Ref) ->
 -type zombie() :: consuela_registry:reg().
 
 -type st() :: #{
-    queue          := queue:queue(zombie()),
-    registry       := consuela_registry:t(),
+    queue := queue:queue(zombie()),
+    registry := consuela_registry:t(),
     retry_strategy := genlib_retry:strategy(),
-    retry_state    => genlib_retry:strategy(),
-    timeout        => timeout(),
-    timer          => reference(),
-    pulse          := {module(), _PulseOpts}
+    retry_state => genlib_retry:strategy(),
+    timeout => timeout(),
+    timer => reference(),
+    pulse := {module(), _PulseOpts}
 }.
 
 -type from() :: {pid(), reference()}.
 
--spec init({consuela_registry:t(), opts()}) ->
-    {ok, st()}.
-
+-spec init({consuela_registry:t(), opts()}) -> {ok, st()}.
 init({Registry, Opts}) ->
     % to have a chance to drain queue containing processes which just died
     _ = erlang:process_flag(trap_exit, true),
@@ -123,10 +111,10 @@ init({Registry, Opts}) ->
                 St#{pulse => V}
         end,
         #{
-            queue          => queue:new(),
-            registry       => Registry,
+            queue => queue:new(),
+            registry => Registry,
             retry_strategy => genlib_retry:linear({max_total_timeout, 10 * 60 * 1000}, 5000),
-            pulse          => {?MODULE, []}
+            pulse => {?MODULE, []}
         },
         Opts
     ),
@@ -134,9 +122,7 @@ init({Registry, Opts}) ->
 
 -type call() :: {enqueue, [zombie()], enqueue_opts()}.
 
--spec handle_call(call(), from(), st()) ->
-    {noreply, st()}.
-
+-spec handle_call(call(), from(), st()) -> {noreply, st()}.
 handle_call({enqueue, Zombies, Opts}, _From, St) ->
     {reply, ok, handle_enqueue(Zombies, Opts, St)};
 handle_call(Call, From, St) ->
@@ -145,9 +131,7 @@ handle_call(Call, From, St) ->
 
 -type cast() :: {enqueue, [zombie()], enqueue_opts()} | drain.
 
--spec handle_cast(cast(), st()) ->
-    {noreply, st()}.
-
+-spec handle_cast(cast(), st()) -> {noreply, st()}.
 handle_cast({enqueue, Zombies, Opts}, St) ->
     {noreply, handle_enqueue(Zombies, Opts, St)};
 handle_cast(drain, St) ->
@@ -158,9 +142,7 @@ handle_cast(Cast, St) ->
 
 -type info() :: {timeout, reference(), clean}.
 
--spec handle_info(info(), st()) ->
-    {noreply, st()}.
-
+-spec handle_info(info(), st()) -> {noreply, st()}.
 handle_info({timeout, TimerRef, clean}, St = #{timer := TimerRef}) ->
     _ = beat({{timer, TimerRef}, fired}, St),
     {noreply, try_clean_head(regular, maps:remove(timer, St))};
@@ -168,9 +150,7 @@ handle_info(Info, St) ->
     _ = beat({unexpected, {info, Info}}, St),
     {noreply, St}.
 
--spec terminate(_Reason, st()) ->
-    ok.
-
+-spec terminate(_Reason, st()) -> ok.
 terminate(shutdown, St) ->
     ok = drain_queue(St);
 terminate({shutdown, _Reason}, St) ->
@@ -178,9 +158,7 @@ terminate({shutdown, _Reason}, St) ->
 terminate(_Error, _St) ->
     ok.
 
--spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) ->
-    {ok, st()}.
-
+-spec code_change(_Vsn | {down, _Vsn}, st(), _Extra) -> {ok, st()}.
 code_change(_Vsn, St, _Extra) ->
     {ok, St}.
 
@@ -297,16 +275,12 @@ advance_retry_state(St = #{retry_state := RetrySt0}) ->
 
 %%
 
--spec beat(beat(), st()) ->
-    _.
-
+-spec beat(beat(), st()) -> _.
 beat(Beat, #{pulse := {Module, PulseOpts}}) ->
     % TODO handle errors?
     Module:handle_beat(Beat, PulseOpts).
 
--spec handle_beat(beat(), [trace]) ->
-    ok.
-
+-spec handle_beat(beat(), [trace]) -> ok.
 handle_beat(Beat, [trace]) ->
     logger:debug("[~p] ~p", [?MODULE, Beat]);
 handle_beat(_Beat, []) ->

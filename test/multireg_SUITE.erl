@@ -7,8 +7,8 @@
 -include_lib("stdlib/include/assert.hrl").
 
 -type group_name() :: atom().
--type test_name()  :: atom().
--type config()     :: [{atom(), _}].
+-type test_name() :: atom().
+-type config() :: [{atom(), _}].
 
 -export([all/0]).
 -export([groups/0]).
@@ -25,17 +25,13 @@
 
 %% Description
 
--spec all() ->
-    [{group, group_name(), list()}].
-
+-spec all() -> [{group, group_name(), list()}].
 all() ->
     [
         {group, multireg, [{repeat, 20}]}
     ].
 
--spec groups() ->
-    [{group_name(), list(), [test_name()]}].
-
+-spec groups() -> [{group_name(), list(), [test_name()]}].
 groups() ->
     [
         {multireg, [], [single_registration_succeeds]}
@@ -43,17 +39,13 @@ groups() ->
 
 %% Startup / shutdown
 
--spec init_per_suite(config()) ->
-    config().
+-spec init_per_suite(config()) -> config().
 
--spec end_per_suite(config()) ->
-    _.
+-spec end_per_suite(config()) -> _.
 
--spec init_per_testcase(test_name(), config()) ->
-    config().
+-spec init_per_testcase(test_name(), config()) -> config().
 
--spec end_per_testcase(test_name(), config()) ->
-    _.
+-spec end_per_testcase(test_name(), config()) -> _.
 
 init_per_suite(C) ->
     Apps = genlib_app:start_application(consuela),
@@ -67,10 +59,10 @@ init_per_testcase(Name, C) ->
     Nodes = ["consul0", "consul1", "consul2"],
     BaseOpts = #{
         namespace => genlib:to_binary(Name),
-        consul    => #{opts => #{pulse => {?MODULE, {client, debug}}}},
-        keeper    => #{pulse => {?MODULE, {keeper, info}}},
-        reaper    => #{pulse => {?MODULE, {reaper, info}}},
-        registry  => #{pulse => {?MODULE, {registry, info}}}
+        consul => #{opts => #{pulse => {?MODULE, {client, debug}}}},
+        keeper => #{pulse => {?MODULE, {keeper, info}}},
+        reaper => #{pulse => {?MODULE, {reaper, info}}},
+        registry => #{pulse => {?MODULE, {registry, info}}}
     },
     {RegRefs, RegSups} = lists:unzip(
         [start_registry(N, Name, Node, BaseOpts) || {N, Node} <- ct_lists:enumerate(Nodes)]
@@ -91,17 +83,16 @@ end_per_testcase(_Name, C) ->
 %% Definitions
 
 -spec single_registration_succeeds(config()) -> _.
-
 single_registration_succeeds(C) ->
     RegRefs = ?config(registry_refs, C),
     Pid = self(),
-    Results = genlib_pmap:map(fun (Ref) -> consuela_registry_server:register(Ref, me, Pid) end, RegRefs),
-    _       = genlib_pmap:map(fun (Ref) -> consuela_registry_server:unregister(Ref, me, Pid) end, RegRefs),
+    Results = genlib_pmap:map(fun(Ref) -> consuela_registry_server:register(Ref, me, Pid) end, RegRefs),
+    _ = genlib_pmap:map(fun(Ref) -> consuela_registry_server:unregister(Ref, me, Pid) end, RegRefs),
     ?assertEqual(
         {[ok], [{error, exists} || _ <- lists:seq(1, ?config(n, C) - 1)]},
         lists:partition(
             fun
-                (ok)         -> true;
+                (ok) -> true;
                 ({error, _}) -> false
             end,
             Results
@@ -116,9 +107,7 @@ single_registration_succeeds(C) ->
     (consuela_client:beat(), {client, category()}) -> ok;
     (consuela_session_keeper:beat(), {keeper, category()}) -> ok;
     (consuela_zombie_reaper:beat(), {reaper, category()}) -> ok;
-    (consuela_registry_server:beat(), {registry, category()}) -> ok
-.
-
+    (consuela_registry_server:beat(), {registry, category()}) -> ok.
 handle_beat(Beat, {Producer, Category}) ->
     ct:pal(Category, "[~p] ~p", [Producer, Beat]);
 handle_beat(_Beat, _) ->

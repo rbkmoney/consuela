@@ -15,9 +15,7 @@
 
 %%
 
--spec stop_linked(pid(), _Reason) ->
-    ok.
-
+-spec stop_linked(pid(), _Reason) -> ok.
 stop_linked(Pid, Reason) ->
     MRef = erlang:monitor(process, Pid),
     _ = erlang:unlink(Pid),
@@ -27,36 +25,26 @@ stop_linked(Pid, Reason) ->
             ok
     end.
 
--spec unlink(pid()) ->
-    pid().
-
+-spec unlink(pid()) -> pid().
 unlink(Pid) ->
     true = erlang:unlink(Pid),
     Pid.
 
 %%
 
--spec await(Expect, fun(() -> Expect | _)) ->
-    Expect.
-
+-spec await(Expect, fun(() -> Expect | _)) -> Expect.
 await(Expect, Compute) ->
     await(Expect, Compute, genlib_retry:linear(3, 100)).
 
--spec await(Expect, fun(() -> Expect | _), genlib_retry:strategy()) ->
-    Expect.
-
+-spec await(Expect, fun(() -> Expect | _), genlib_retry:strategy()) -> Expect.
 await(Expect, Compute, Retry) ->
-    await(Expect, fun (V) -> V end, Compute, Retry).
+    await(Expect, fun(V) -> V end, Compute, Retry).
 
--spec await_n(non_neg_integer(), fun(() -> non_neg_integer() | _)) ->
-    _Result.
-
+-spec await_n(non_neg_integer(), fun(() -> non_neg_integer() | _)) -> _Result.
 await_n(N, Compute) ->
     await_n(N, Compute, genlib_retry:linear(3, 100)).
 
--spec await_n(non_neg_integer(), fun(() -> non_neg_integer() | _), genlib_retry:strategy()) ->
-    _Result.
-
+-spec await_n(non_neg_integer(), fun(() -> non_neg_integer() | _), genlib_retry:strategy()) -> _Result.
 await_n(N, Compute, Retry) ->
     await(N, fun erlang:length/1, Compute, Retry).
 
