@@ -26,8 +26,8 @@
 
 -behaviour(ranch_protocol).
 
--export([start_link/4]).
--export([init/4]).
+-export([start_link/3]).
+-export([init/3]).
 
 %%
 
@@ -73,14 +73,14 @@ mk_state(Opts) ->
         pulse => maps:get(pulse, Opts, {?MODULE, []})
     }.
 
--spec start_link(pid(), inet:socket(), module(), st()) -> {ok, pid()}.
-start_link(ListenerPid, Socket, Transport, St) ->
-    Pid = spawn_link(?MODULE, init, [ListenerPid, Socket, Transport, St]),
+-spec start_link(pid(), module(), st()) -> {ok, pid()}.
+start_link(ListenerPid, Transport, St) ->
+    Pid = spawn_link(?MODULE, init, [ListenerPid, Transport, St]),
     {ok, Pid}.
 
--spec init(pid(), inet:socket(), module(), st()) -> _.
-init(ListenerPid, Socket, Transport, St) ->
-    {ok, _} = ranch:handshake(ListenerPid),
+-spec init(pid(), module(), st()) -> _.
+init(ListenerPid, Transport, St) ->
+    {ok, Socket} = ranch:handshake(ListenerPid),
     _ = beat({{socket, {Transport, Socket}}, accepted}, St),
     ok = Transport:close(Socket),
     ok.

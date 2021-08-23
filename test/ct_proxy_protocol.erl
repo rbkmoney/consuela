@@ -18,7 +18,7 @@
 -export_type([activity/0]).
 
 %% Behaviour callbacks
--export([start_link/4, init/4]).
+-export([start_link/3, init/3]).
 
 %% Internal state
 %% ----------------------------------------------------------
@@ -32,9 +32,9 @@
     remote_opts => list(gen_tcp:option())
 }.
 
--spec start_link(pid(), inet:socket(), module(), opts()) -> {ok, pid()}.
-start_link(ListenerPid, Socket, Transport, Opts) ->
-    Pid = spawn_link(?MODULE, init, [ListenerPid, Socket, Transport, Opts]),
+-spec start_link(pid(), module(), opts()) -> {ok, pid()}.
+start_link(ListenerPid, Transport, Opts) ->
+    Pid = spawn_link(?MODULE, init, [ListenerPid, Transport, Opts]),
     {ok, Pid}.
 
 %%
@@ -52,9 +52,9 @@ start_link(ListenerPid, Socket, Transport, Opts) ->
     timeout :: non_neg_integer()
 }).
 
--spec init(pid(), inet:socket(), module(), opts()) -> no_return().
-init(ListenerPid, Socket, Transport, Opts) ->
-    ok = ranch:accept_ack(ListenerPid),
+-spec init(pid(), module(), opts()) -> no_return().
+init(ListenerPid, Transport, Opts) ->
+    {ok, Socket} = ranch:handshake(ListenerPid),
     ProxyFun = maps:get(proxy, Opts),
     Timeout = maps:get(timeout, Opts, ?DEFAULT_TIMEOUT),
     SOpts = maps:get(source_opts, Opts, ?DEFAULT_SOCKET_OPTS),
