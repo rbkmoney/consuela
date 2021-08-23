@@ -132,7 +132,7 @@ select(Ref, Pattern) ->
 
 -spec deadline_call(ref(), _Call, etc(), timeout()) -> _Result.
 
--define(is_shutdown(R), (R == noproc orelse R == normal orelse R == shutdown)).
+-define(IS_SHUTDOWN(R), (R == noproc orelse R == normal orelse R == shutdown)).
 
 deadline_call(Ref, Call, ETC, Timeout) when is_integer(ETC), ETC > 0, Timeout > ETC ->
     try
@@ -140,9 +140,9 @@ deadline_call(Ref, Call, ETC, Timeout) when is_integer(ETC), ETC > 0, Timeout > 
     catch
         exit:{timeout, _} ->
             {failed, {unknown, timeout}};
-        exit:Reason when ?is_shutdown(Reason) ->
+        exit:Reason when ?IS_SHUTDOWN(Reason) ->
             {failed, registry_terminated};
-        exit:{Reason, _} when ?is_shutdown(Reason) orelse Reason == killed ->
+        exit:{Reason, _} when ?IS_SHUTDOWN(Reason) orelse Reason == killed ->
             {failed, registry_terminated}
     end.
 
